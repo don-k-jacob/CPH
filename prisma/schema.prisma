@@ -1,0 +1,237 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  MODERATOR
+  ADMIN
+}
+
+enum LaunchStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  ARCHIVED
+}
+
+enum ReportReason {
+  SPAM
+  ABUSE
+  SCAM
+  OTHER
+}
+
+model User {
+  id          Int       @id @default(autoincrement())
+  email       String    @unique
+  username    String    @unique
+  passwordHash String    @default("")
+  name        String
+  bio         String?
+  avatarUrl   String?
+  role        UserRole  @default(USER)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+  launches    Launch[]  @relation("HunterLaunches")
+  upvotes     Upvote[]
+  comments    Comment[]
+  followers   Follow[]  @relation("Followee")
+  following   Follow[]  @relation("Follower")
+  reports     Report[]
+  notifications Notification[]
+  collections Collection[]
+}
+
+enum ProductMediaType {
+  IMAGE
+  VIDEO
+}
+
+model Topic {
+  id          Int            @id @default(autoincrement())
+  name        String         @unique
+  slug        String         @unique
+  description String?
+  createdAt   DateTime       @default(now())
+
+  products    ProductTopic[]
+}
+
+model Product {
+  id          Int            @id @default(autoincrement())
+  name        String
+  slug        String         @unique
+  tagline     String
+  description String
+  websiteUrl  String
+  logoUrl     String?
+  status      LaunchStatus   @default(DRAFT)
+  makerId     Int
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  maker       User           @relation(fields: [makerId], references: [id])
+  launches    Launch[]
+  topics      ProductTopic[]
+  collectionItems CollectionItem[]
+  sponsorships Sponsorship[]
+  media       ProductMedia[]
+
+  @@index([makerId])
+}
+
+model ProductMedia {
+  id         Int              @id @default(autoincrement())
+  productId  Int
+  type       ProductMediaType
+  url        String
+  createdAt  DateTime         @default(now())
+
+  product    Product           @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+}
+
+model Launch {
+  id              Int         @id @default(autoincrement())
+  productId       Int
+  hunterId        Int
+  launchDate      DateTime
+  status          LaunchStatus @default(LIVE)
+  heroImageUrl    String?
+  galleryJson     String?
+  createdAt       DateTime    @default(now())
+
+  product         Product     @relation(fields: [productId], references: [id])
+  hunter          User        @relation("HunterLaunches", fields: [hunterId], references: [id])
+  upvotes         Upvote[]
+  comments        Comment[]
+  reports         Report[]
+
+  @@index([productId])
+  @@index([launchDate])
+}
+
+model ProductTopic {
+  productId Int
+  topicId   Int
+
+  product   Product @relation(fields: [productId], references: [id])
+  topic     Topic   @relation(fields: [topicId], references: [id])
+
+  @@id([productId, topicId])
+}
+
+model Upvote {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  launchId   Int
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id])
+  launch     Launch   @relation(fields: [launchId], references: [id])
+
+  @@unique([userId, launchId])
+  @@index([launchId])
+}
+
+model Comment {
+  id          Int       @id @default(autoincrement())
+  launchId    Int
+  userId      Int
+  body        String
+  parentId    Int?
+  createdAt   DateTime  @default(now())
+
+  launch      Launch    @relation(fields: [launchId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+  parent      Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies     Comment[] @relation("CommentReplies")
+
+  @@index([launchId])
+  @@index([userId])
+}
+
+model Follow {
+  id          Int      @id @default(autoincrement())
+  followerId  Int
+  followeeId  Int
+  createdAt   DateTime @default(now())
+
+  follower    User     @relation("Follower", fields: [followerId], references: [id])
+  followee    User     @relation("Followee", fields: [followeeId], references: [id])
+
+  @@unique([followerId, followeeId])
+}
+
+model Collection {
+  id          Int              @id @default(autoincrement())
+  name        String
+  slug        String           @unique
+  description String?
+  creatorId   Int
+  createdAt   DateTime         @default(now())
+
+  creator     User             @relation(fields: [creatorId], references: [id])
+  items       CollectionItem[]
+}
+
+model CollectionItem {
+  id           Int        @id @default(autoincrement())
+  collectionId Int
+  productId    Int
+  note         String?
+  position     Int        @default(0)
+
+  collection   Collection @relation(fields: [collectionId], references: [id])
+  product      Product    @relation(fields: [productId], references: [id])
+
+  @@unique([collectionId, productId])
+}
+
+model Report {
+  id          Int          @id @default(autoincrement())
+  launchId    Int
+  reporterId  Int
+  reason      ReportReason
+  details     String?
+  resolved    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+
+  launch      Launch       @relation(fields: [launchId], references: [id])
+  reporter    User         @relation(fields: [reporterId], references: [id])
+}
+
+model Notification {
+  id          Int        @id @default(autoincrement())
+  userId      Int
+  title       String
+  body        String
+  href        String?
+  readAt      DateTime?
+  createdAt   DateTime   @default(now())
+
+  user        User       @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model Sponsorship {
+  id           Int       @id @default(autoincrement())
+  productId     Int
+  startsAt      DateTime
+  endsAt        DateTime
+  label         String    @default("Sponsored")
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+
+  product       Product   @relation(fields: [productId], references: [id])
+}

@@ -1,0 +1,10 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // API writes are performed by Firebase Admin SDK on the server.
+    // Keep client direct access disabled by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

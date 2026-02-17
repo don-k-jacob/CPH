@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Public reads for discovery surfaces.
+    match /products/{doc} { allow read: if true; allow write: if false; }
+    match /launches/{doc} { allow read: if true; allow write: if false; }
+    match /topics/{doc} { allow read: if true; allow write: if false; }
+    match /productMedia/{doc} { allow read: if true; allow write: if false; }
+    match /comments/{doc} { allow read: if true; allow write: if false; }
+    match /collections/{doc} { allow read: if true; allow write: if false; }
+    match /collectionItems/{doc} { allow read: if true; allow write: if false; }
+    match /teammatePosts/{doc} { allow read: if true; allow write: if false; }
+    match /eventRegistrations/{doc} { allow read: if true; allow write: if false; }
+    match /users/{doc} { allow read: if true; allow write: if false; }
+    match /notifications/{doc} { allow read: if false; allow write: if false; }
+    match /reports/{doc} { allow read: if false; allow write: if false; }
+    match /upvotes/{doc} { allow read: if false; allow write: if false; }
+    match /follows/{doc} { allow read: if false; allow write: if false; }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
