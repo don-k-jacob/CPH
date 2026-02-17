@@ -1,4 +1,4 @@
-import { firestore } from "@/lib/firebase-admin";
+import { getFirestore } from "@/lib/firebase-admin";
 
 export type UserRecord = {
   id: string;
@@ -230,20 +230,20 @@ function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
 }
 
-const users = firestore.collection("users");
-const topics = firestore.collection("topics");
-const products = firestore.collection("products");
-const launches = firestore.collection("launches");
-const productMedia = firestore.collection("productMedia");
-const upvotes = firestore.collection("upvotes");
-const comments = firestore.collection("comments");
-const follows = firestore.collection("follows");
-const reports = firestore.collection("reports");
-const notifications = firestore.collection("notifications");
-const collections = firestore.collection("collections");
-const collectionItems = firestore.collection("collectionItems");
-const eventRegistrations = firestore.collection("eventRegistrations");
-const teammatePosts = firestore.collection("teammatePosts");
+const users = getFirestore().collection("users");
+const topics = getFirestore().collection("topics");
+const products = getFirestore().collection("products");
+const launches = getFirestore().collection("launches");
+const productMedia = getFirestore().collection("productMedia");
+const upvotes = getFirestore().collection("upvotes");
+const comments = getFirestore().collection("comments");
+const follows = getFirestore().collection("follows");
+const reports = getFirestore().collection("reports");
+const notifications = getFirestore().collection("notifications");
+const collections = getFirestore().collection("collections");
+const collectionItems = getFirestore().collection("collectionItems");
+const eventRegistrations = getFirestore().collection("eventRegistrations");
+const teammatePosts = getFirestore().collection("teammatePosts");
 
 export async function getUserById(userId: string): Promise<UserRecord | null> {
   const snap = await users.doc(userId).get();

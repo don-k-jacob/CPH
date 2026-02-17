@@ -1,6 +1,7 @@
-import { App, cert, getApps, initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
+import type { App } from "firebase-admin/app";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore as getFirestoreLib } from "firebase-admin/firestore";
+import { getStorage as getStorageLib } from "firebase-admin/storage";
 
 function getPrivateKey(): string {
   const key = process.env.FIREBASE_PRIVATE_KEY;
@@ -54,5 +55,17 @@ function getFirebaseApp(): App {
   return app;
 }
 
-export const firestore = getFirestore(getFirebaseApp());
-export const storage = getStorage(getFirebaseApp());
+let _firestore: ReturnType<typeof getFirestoreLib> | null = null;
+let _storage: ReturnType<typeof getStorageLib> | null = null;
+
+/** Lazily initialized so build can succeed without Firebase env vars. */
+export function getFirestore(): ReturnType<typeof getFirestoreLib> {
+  if (!_firestore) _firestore = getFirestoreLib(getFirebaseApp());
+  return _firestore;
+}
+
+/** Lazily initialized so build can succeed without Firebase env vars. */
+export function getStorage(): ReturnType<typeof getStorageLib> {
+  if (!_storage) _storage = getStorageLib(getFirebaseApp());
+  return _storage;
+}

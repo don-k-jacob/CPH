@@ -35,7 +35,8 @@ async function upsertByField(collection: string, field: string, value: string, d
 
 async function main() {
   loadEnvConfig(process.cwd());
-  ({ firestore } = await import("../lib/firebase-admin"));
+  const { getFirestore } = await import("../lib/firebase-admin");
+  firestore = getFirestore();
   const now = new Date().toISOString();
 
   const makerId = await upsertByField("users", "email", "maker@cph.dev", {

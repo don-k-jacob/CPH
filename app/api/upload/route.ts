@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/auth";
 import { getBackendErrorMessage } from "@/lib/backend-error";
-import { storage } from "@/lib/firebase-admin";
+import { getStorage } from "@/lib/firebase-admin";
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "File too large (max 25MB)" }, { status: 400 });
     }
 
-    const bucket = storage.bucket();
+    const bucket = getStorage().bucket();
     const extension =
       (file.name.includes(".") ? file.name.split(".").pop() : file.type.split("/")[1]) || "bin";
     const path = `uploads/${userId}/${Date.now()}-${randomUUID()}.${extension}`;

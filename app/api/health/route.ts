@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { firestore } from "@/lib/firebase-admin";
+import { getFirestore } from "@/lib/firebase-admin";
 import { getBackendErrorMessage } from "@/lib/backend-error";
 
 export async function GET() {
   try {
-    const ping = await firestore.collection("_health").doc("ping").get();
+    const ping = await getFirestore().collection("_health").doc("ping").get();
     return NextResponse.json({
       ok: true,
       firestore: ping.exists ? "connected" : "connected",
