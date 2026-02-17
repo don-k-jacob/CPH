@@ -6,7 +6,12 @@ import { JoinEventForm } from "@/components/events/join-event-form";
 import { TeammateBoard } from "@/components/events/teammate-board";
 import { getCurrentUser } from "@/lib/auth";
 import { getEventBySlug } from "@/lib/events-config";
-import { getEventRegistrationByUser, getEventStats, getTeammatePosts } from "@/lib/firebase-db";
+import {
+  type EventRegistrationRecord,
+  getEventRegistrationByUser,
+  getEventStats,
+  getTeammatePosts
+} from "@/lib/firebase-db";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +32,7 @@ const NAV_ITEMS = [
 
 async function getEventData(slug: string) {
   const currentUser = await getCurrentUser().catch(() => null);
-  let registration = null;
+  let registration: EventRegistrationRecord | null = null;
   let posts: Awaited<ReturnType<typeof getTeammatePosts>> = [];
   let stats = { registrations: 0, teams: 0, individuals: 0, teammatePosts: 0 };
   try {
