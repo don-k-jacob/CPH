@@ -16,7 +16,12 @@ export default async function ProfilePage() {
           name: user.name,
           username: user.username,
           bio: user.bio ?? "",
-          avatarUrl: user.avatarUrl ?? ""
+          avatarUrl: user.avatarUrl ?? "",
+          experience: user.experience ?? "",
+          linkedInUrl: user.linkedInUrl ?? "",
+          xUrl: user.xUrl ?? "",
+          githubUrl: user.githubUrl ?? "",
+          websiteUrl: user.websiteUrl ?? ""
         }}
       />
     </section>

@@ -23,13 +23,26 @@ export default async function CollectionPage({ params }: { params: Promise<{ slu
         </h1>
         <p className="text-black/70">Curated by {collection.creator?.name ?? "Unknown"}</p>
         <div className="space-y-3">
-          {collection.items.map((item) => (
-            <Link key={item.id} href={`/products/${item.product!.slug}`} className="card block p-4">
-              <p className="text-lg font-bold">{item.product!.name}</p>
-              <p className="text-black/70">{item.product!.tagline}</p>
-              {item.note ? <p className="mt-2 text-sm text-black/60">{item.note}</p> : null}
-            </Link>
-          ))}
+          {collection.items.map((item) => {
+            const product = item.product;
+            if (!product) {
+              return (
+                <article key={item.id} className="card p-4">
+                  <p className="text-lg font-bold">Unavailable product</p>
+                  <p className="text-black/70">This item is no longer available.</p>
+                  {item.note ? <p className="mt-2 text-sm text-black/60">{item.note}</p> : null}
+                </article>
+              );
+            }
+
+            return (
+              <Link key={item.id} href={`/products/${product.slug}`} className="card block p-4">
+                <p className="text-lg font-bold">{product.name}</p>
+                <p className="text-black/70">{product.tagline}</p>
+                {item.note ? <p className="mt-2 text-sm text-black/60">{item.note}</p> : null}
+              </Link>
+            );
+          })}
         </div>
       </section>
     );

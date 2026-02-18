@@ -11,8 +11,8 @@ export default async function EventsIndexPage() {
     const events = getAllEvents();
 
     return (
-      <section className="space-y-8">
-        <div>
+      <section className="min-w-0 space-y-8">
+        <div className="min-w-0">
           <span className="ornament">Hackathons & Sprints</span>
           <h1 className="section-heading mt-2 text-4xl font-bold">Events</h1>
           <p className="mt-2 max-w-2xl text-black/72">
@@ -45,10 +45,10 @@ export default async function EventsIndexPage() {
                     </span>
                   )}
                 </div>
-                <div className="p-5">
-                  <h2 className="section-heading text-xl font-bold text-ink">{event.title}</h2>
+                <div className="min-w-0 p-5">
+                  <h2 className="section-heading break-words text-xl font-bold text-ink">{event.title}</h2>
                   {event.tagline ? (
-                    <p className="mt-1 text-sm font-medium text-black/70">{event.tagline}</p>
+                    <p className="mt-1 break-words text-sm font-medium text-black/70">{event.tagline}</p>
                   ) : null}
                   <p className="mt-2 line-clamp-2 text-sm text-black/65">{event.description}</p>
                   <p className="mt-3 text-xs font-medium text-black/55">{event.dateRange}</p>

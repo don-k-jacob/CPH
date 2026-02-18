@@ -1,39 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentUserId } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { getBackendErrorMessage } from "@/lib/backend-error";
 import { upsertEventRegistration } from "@/lib/firebase-db";
 
+const teammatePreferenceEnum = z.enum(["solo", "looking", "team"]);
+
 const schema = z.object({
   eventSlug: z.string().min(2),
-  participationType: z.enum(["TEAM", "INDIVIDUAL"]),
-  teamName: z.string().optional(),
-  projectName: z.string().min(3).max(120),
-  skills: z.array(z.string().min(1)).min(1).max(12),
-  bio: z.string().min(10).max(600)
+  teammatePreference: teammatePreferenceEnum,
+  referralSource: z.string().min(1, "Please select how you heard about us."),
+  eligibilityAgreed: z.literal(true, { errorMap: () => ({ message: "You must agree to the eligibility requirements." }) }),
+  rulesAgreed: z.literal(true, { errorMap: () => ({ message: "You must agree to the Official Rules and Terms of Service." }) })
 });
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getCurrentUserId();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized. Sign in to join the hackathon." }, { status: 401 });
     }
 
-    const parsed = schema.parse(await request.json());
-
-    if (parsed.participationType === "TEAM" && !parsed.teamName?.trim()) {
-      return NextResponse.json({ error: "Team name is required for team registration." }, { status: 400 });
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
+    const parsed = schema.parse(body);
 
     await upsertEventRegistration({
       eventSlug: parsed.eventSlug,
-      userId,
-      participationType: parsed.participationType,
-      teamName: parsed.teamName?.trim() || null,
-      projectName: parsed.projectName.trim(),
-      skills: parsed.skills.map((s) => s.trim()).filter(Boolean),
-      bio: parsed.bio.trim()
+      userId: user.id,
+      teammatePreference: parsed.teammatePreference,
+      referralSource: parsed.referralSource,
+      eligibilityAgreed: true,
+      rulesAgreed: true
     });
 
     return NextResponse.json({ ok: true });

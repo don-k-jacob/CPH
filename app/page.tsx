@@ -45,8 +45,8 @@ export default async function HomePage() {
   );
 
   return (
-    <section className="space-y-6">
-      <div className="card overflow-hidden p-4 sm:p-6 md:p-10">
+    <section className="min-w-0 space-y-6">
+      <div className="card min-w-0 overflow-hidden p-4 sm:p-6 md:p-10">
         <span className="ornament">Daily Discernment</span>
         <h1 className="section-heading mt-3 text-3xl font-bold leading-tight sm:text-4xl md:text-5xl">
           Discover and launch products that serve the common good.
@@ -68,7 +68,7 @@ export default async function HomePage() {
 
       <EventSessionCard />
 
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         {ranked.map((item, index) => (
           <ProductCard
             key={item.launch.id}

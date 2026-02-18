@@ -8,10 +8,15 @@ import { getCurrentUser } from "@/lib/auth";
 import { getEventBySlug } from "@/lib/events-config";
 import {
   type EventRegistrationRecord,
+  getEventApplicationByUser,
   getEventRegistrationByUser,
+  getEventRegistrations,
   getEventStats,
-  getTeammatePosts
+  getTeammatePosts,
+  refreshEventApplicationTeamStatuses
 } from "@/lib/firebase-db";
+import { ParticipantList } from "@/components/events/participant-list";
+import { EventApplicationForm } from "@/components/events/event-application-form";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return { title: `${event.title} | Catholic Product Hunt` };
 }
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { id: "overview", label: "Overview" },
   { id: "participants", label: "Participants" },
   { id: "timeline", label: "Timeline" },
@@ -33,21 +38,32 @@ const NAV_ITEMS = [
 async function getEventData(slug: string) {
   const currentUser = await getCurrentUser().catch(() => null);
   let registration: EventRegistrationRecord | null = null;
+  let application: Awaited<ReturnType<typeof getEventApplicationByUser>> | null = null;
   let posts: Awaited<ReturnType<typeof getTeammatePosts>> = [];
+  let participants: Awaited<ReturnType<typeof getEventRegistrations>> = [];
   let stats = { registrations: 0, teams: 0, individuals: 0, teammatePosts: 0 };
   try {
-    const [reg, postsData, statsData] = await Promise.all([
+    const [reg, appData, postsData, participantsData, statsData] = await Promise.all([
       currentUser ? getEventRegistrationByUser(slug, currentUser.id) : Promise.resolve(null),
+      currentUser ? getEventApplicationByUser(slug, currentUser.id) : Promise.resolve(null),
       getTeammatePosts(slug),
+      getEventRegistrations(slug),
       getEventStats(slug)
     ]);
     registration = reg;
+    if (appData) {
+      const teamMembers = await refreshEventApplicationTeamStatuses(appData.teamMembers);
+      application = { ...appData, teamMembers };
+    } else {
+      application = null;
+    }
     posts = postsData;
+    participants = participantsData;
     stats = statsData;
   } catch {
     // Firebase unavailable: show page with zero stats and empty lists
   }
-  return { currentUser, registration, posts, stats };
+  return { currentUser, registration, application, posts, participants, stats };
 }
 
 export default async function EventBySlugPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -58,29 +74,38 @@ export default async function EventBySlugPage({ params }: { params: Promise<{ sl
     notFound();
   }
 
-  const { currentUser, registration, posts, stats } = await getEventData(slug);
+  const { currentUser, registration, application, posts, participants, stats } = await getEventData(slug);
   const totalRegistrations = stats.registrations;
+  const isRegistered = Boolean(currentUser && registration);
+  const NAV_ITEMS =
+    isRegistered
+      ? [
+          ...BASE_NAV_ITEMS.slice(0, 4),
+          { id: "application", label: "Application" },
+          BASE_NAV_ITEMS[4]!
+        ]
+      : BASE_NAV_ITEMS;
 
   return (
-    <div className="space-y-8">
+    <div className="min-w-0 space-y-8">
         {/* Hero — Devpost-style */}
         <header className="relative overflow-hidden rounded-2xl border border-black/10 bg-gradient-to-br from-ink/95 to-ink text-white shadow-xl">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(255,255,255,0.12),transparent)]" />
           <div className="relative px-4 py-8 sm:px-6 sm:py-10 md:px-10 md:py-14">
-            <div className="mx-auto max-w-4xl">
+            <div className="mx-auto max-w-4xl min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">
                 Seasonal Program
               </p>
-              <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl" style={{ fontFamily: "var(--font-display)" }}>
+              <h1 className="mt-3 break-words text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl" style={{ fontFamily: "var(--font-display)" }}>
                 {eventConfig.title}
               </h1>
               {eventConfig.tagline ? (
-                <p className="mt-3 text-lg text-white/90 sm:text-xl md:text-2xl">{eventConfig.tagline}</p>
+                <p className="mt-3 break-words text-lg text-white/90 sm:text-xl md:text-2xl">{eventConfig.tagline}</p>
               ) : null}
               <p className="mt-4 text-sm text-white/70 sm:text-base">{eventConfig.dateRange}</p>
               <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <Link
-                  href="#event-tabs"
+                  href="#join"
                   className="inline-flex min-h-[48px] items-center justify-center rounded-full bg-white px-6 py-3 font-semibold text-ink shadow-md transition hover:bg-white/90 active:scale-[0.98]"
                 >
                   Join hackathon
@@ -108,7 +133,7 @@ export default async function EventBySlugPage({ params }: { params: Promise<{ sl
         </header>
 
         {/* Stats bar — Devpost-style: Location | Format | Participants | Prizes/Tracks */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-black/10 pb-4 text-xs text-black/80 sm:gap-x-4 sm:text-sm">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-black/10 pb-4 text-xs text-black/80 sm:gap-x-4 sm:text-sm">
           {eventConfig.location ? <span className="font-medium text-ink">{eventConfig.location}</span> : null}
           {eventConfig.location && eventConfig.format ? <span className="text-black/40">|</span> : null}
           {eventConfig.format ? <span>{eventConfig.format}</span> : null}
@@ -233,11 +258,28 @@ export default async function EventBySlugPage({ params }: { params: Promise<{ sl
               <p className="text-black/70">
                 {totalRegistrations} registered · Find teammates or switch to the Register tab to join.
               </p>
+              <ParticipantList
+                participants={participants.map((r) => ({
+                  userId: r.userId,
+                  userName: r.user?.name ?? "",
+                  username: r.user?.username ?? "",
+                  participationType: r.participationType,
+                  teamName: r.teamName,
+                  projectName: r.projectName ?? ""
+                }))}
+                currentUserId={currentUser?.id ?? null}
+              />
               <TeammateBoard
                 eventSlug={slug}
+                eventTitle={eventConfig.title}
                 isLoggedIn={Boolean(currentUser)}
+                currentUserId={currentUser?.id ?? null}
+                isRegistered={Boolean(
+                  currentUser && registration
+                )}
                 posts={posts.map((post) => ({
                   id: post.id,
+                  userId: post.userId,
                   userName: post.user?.name ?? "Unknown",
                   username: post.user?.username ?? "unknown",
                   participationType: post.participationType,
@@ -285,23 +327,51 @@ export default async function EventBySlugPage({ params }: { params: Promise<{ sl
               )}
             </div>
 
-            {/* Panel 4: Register */}
-            <div className="card border-accent/30 bg-accentSoft/30 p-6 md:p-8">
-              <p className="mb-6 text-black/75">Join the event and get building.</p>
+            {/* Panel 4: Application (only when registered) */}
+            {isRegistered ? (
+              <div id="application" className="min-w-0">
+                <EventApplicationForm
+                  eventSlug={slug}
+                  tracks={eventConfig.tracks}
+                  initialApplication={
+                    application
+                      ? {
+                          status: application.status,
+                          submittedAt: application.submittedAt,
+                          teamMembers: application.teamMembers,
+                          sections: application.sections
+                        }
+                      : null
+                  }
+                />
+              </div>
+            ) : null}
+
+            {/* Panel 5: Register (or Panel 4 when not registered) */}
+            <div className="card min-w-0 border-accent/30 bg-accentSoft/30 p-4 sm:p-6 md:p-8">
+              <p className="mb-6 text-black/75">Join the hackathon by creating an account and clicking Join hackathon.</p>
               <JoinEventForm
                 eventSlug={slug}
+                eventTitle={eventConfig.title}
                 isLoggedIn={Boolean(currentUser)}
+                isRegistered={Boolean(registration)}
                 initialRegistration={
                   registration
                     ? {
                         participationType: registration.participationType,
                         teamName: registration.teamName,
-                        projectName: registration.projectName,
-                        skills: registration.skills,
-                        bio: registration.bio
+                        projectName:
+                          registration.projectName ||
+                          application?.sections?.companyName ||
+                          "",
+                        skills: registration.skills ?? [],
+                        bio: registration.bio ?? "",
+                        teammatePreference: registration.teammatePreference,
+                        referralSource: registration.referralSource
                       }
                     : null
                 }
+                currentUserUsername={currentUser?.username ?? null}
               />
             </div>
           </EventPageTabs>

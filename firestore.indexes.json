@@ -64,6 +64,14 @@
         { "fieldPath": "eventSlug", "order": "ASCENDING" },
         { "fieldPath": "participationType", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "eventRegistrations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eventSlug", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

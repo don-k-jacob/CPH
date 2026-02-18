@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { hashPassword } from "@/lib/auth";
+import { getBackendErrorMessage } from "@/lib/backend-error";
 import { createUser, getUserByEmail, getUserByUsername } from "@/lib/firebase-db";
 import { setSessionCookie } from "@/lib/session";
 
 const signupSchema = z.object({
-  name: z.string().min(2),
+  name: z.string().trim().min(2),
   username: z
     .string()
+    .trim()
     .min(3)
     .max(30)
     .regex(/^[a-zA-Z0-9_]+$/),
-  email: z.string().email(),
+  email: z.string().trim().email(),
   password: z.string().min(8)
 });
 
@@ -41,6 +43,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid payload" }, { status: 400 });
     }
 
-    return NextResponse.json({ error: "Unable to create account" }, { status: 500 });
+    return NextResponse.json({ error: getBackendErrorMessage(error) }, { status: 503 });
   }
 }

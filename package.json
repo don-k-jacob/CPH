@@ -2,9 +2,17 @@
   "name": "catholic-product-hunt",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18.18 <23"
+  },
   "scripts": {
-    "dev": "next dev",
+    "clean": "rm -rf .next",
+    "check:node": "node scripts/check-node-version.mjs",
+    "predev": "npm run check:node",
+    "dev": "npm run clean && next dev",
+    "prebuild": "npm run check:node",
     "build": "next build",
+    "prestart": "npm run check:node",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

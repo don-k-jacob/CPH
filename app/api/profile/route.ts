@@ -11,7 +11,12 @@ const profileSchema = z.object({
     .max(30)
     .regex(/^[a-zA-Z0-9_]+$/),
   bio: z.string().max(2000).optional(),
-  avatarUrl: z.string().url().optional().or(z.literal(""))
+  avatarUrl: z.string().url().optional().or(z.literal("")),
+  experience: z.string().max(500).optional(),
+  linkedInUrl: z.string().url().optional().or(z.literal("")),
+  xUrl: z.string().url().optional().or(z.literal("")),
+  githubUrl: z.string().url().optional().or(z.literal("")),
+  websiteUrl: z.string().url().optional().or(z.literal(""))
 });
 
 export async function PATCH(request: NextRequest) {
@@ -21,7 +26,13 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const parsed = profileSchema.parse(await request.json());
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+    const parsed = profileSchema.parse(body);
     const username = parsed.username.toLowerCase();
 
     const conflict = await getUserByUsername(username);
@@ -33,7 +44,12 @@ export async function PATCH(request: NextRequest) {
       name: parsed.name,
       username,
       bio: parsed.bio || null,
-      avatarUrl: parsed.avatarUrl || null
+      avatarUrl: parsed.avatarUrl || null,
+      experience: parsed.experience?.trim() || null,
+      linkedInUrl: parsed.linkedInUrl?.trim() || null,
+      xUrl: parsed.xUrl?.trim() || null,
+      githubUrl: parsed.githubUrl?.trim() || null,
+      websiteUrl: parsed.websiteUrl?.trim() || null
     });
 
     return NextResponse.json({ ok: true });

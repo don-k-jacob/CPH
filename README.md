@@ -100,4 +100,30 @@ firebase deploy --only firestore:rules,firestore:indexes,storage
 - `GET /api/notifications`
 - `POST /api/events/register`
 - `GET|POST /api/events/teammates`
+
+## Troubleshooting
+
+**"Cannot find module './xxxx.js'"**, `/_app` undefined, or random 500s in dev
+
+This is usually a corrupted `.next` build cache, often triggered by unsupported Node versions (for example Node `24.x`) with Next.js `15`.
+
+Use Node `22.x` LTS, then reset once:
+
+```bash
+nvm install 22
+nvm use 22
+rm -rf .next node_modules package-lock.json
+npm install
+npm run dev
+```
+
+**"SegmentViewNode" / "React Client Manifest" or "Cannot find module vendor-chunks/@opentelemetry" in dev**
+
+These often come from a stale Next.js cache or Turbopack/devtools. Fix:
+
+1. Stop the dev server (Ctrl+C).
+2. Clear the build cache: `rm -rf .next`
+3. Start again: `npm run dev`
+
+If the error persists, close other tabs pointing at the app and restart the dev server once. Production builds are unaffected (`npm run build`).
 # CPH

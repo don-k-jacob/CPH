@@ -18,13 +18,31 @@ export default async function UpcomingPage() {
           <p className="text-black/60">No upcoming launches scheduled yet.</p>
         ) : (
           <div className="space-y-3">
-            {launches.map((launch) => (
-              <Link key={launch.id} href={`/products/${launch.product?.slug ?? ""}`} className="card block p-4">
-                <p className="text-lg font-bold">{launch.product?.name ?? "Unknown product"}</p>
-                <p className="text-black/70">{launch.product?.tagline ?? "No tagline"}</p>
-                <p className="mt-1 text-xs text-black/60">Launches on {new Date(launch.launchDate).toLocaleString()}</p>
-              </Link>
-            ))}
+            {launches.map((launch) => {
+              const productSlug = launch.product?.slug;
+              const hasProduct = Boolean(productSlug);
+              const content = (
+                <>
+                  <p className="text-lg font-bold">{launch.product?.name ?? "Unknown product"}</p>
+                  <p className="text-black/70">{launch.product?.tagline ?? "No tagline"}</p>
+                  <p className="mt-1 text-xs text-black/60">Launches on {new Date(launch.launchDate).toLocaleString()}</p>
+                </>
+              );
+
+              if (!hasProduct) {
+                return (
+                  <article key={launch.id} className="card p-4">
+                    {content}
+                  </article>
+                );
+              }
+
+              return (
+                <Link key={launch.id} href={`/products/${productSlug}`} className="card block p-4">
+                  {content}
+                </Link>
+              );
+            })}
           </div>
         )}
       </section>

@@ -16,7 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body className="min-h-screen" style={{ fontFamily: "var(--font-body)" }}>
         <Header />
-        <main className="container py-4 md:py-10">
+        <main className="container min-w-0 py-4 md:py-10">
           <div className="page-frame">{children}</div>
         </main>
         <footer className="container pb-8 pt-2 text-center text-xs text-black/55">

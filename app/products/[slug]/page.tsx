@@ -46,14 +46,14 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     }));
 
     return (
-      <section className="space-y-8">
-        <article className="card p-4 sm:p-6 md:p-10">
+      <section className="min-w-0 space-y-8">
+        <article className="card min-w-0 overflow-hidden p-4 sm:p-6 md:p-10">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-black/45">Product launch</p>
-          <h1 className="mt-2 text-2xl font-bold leading-tight sm:text-3xl md:text-4xl" style={{ fontFamily: "var(--font-display)" }}>
+          <h1 className="mt-2 break-words text-2xl font-bold leading-tight sm:text-3xl md:text-4xl" style={{ fontFamily: "var(--font-display)" }}>
             {data.product.name}
           </h1>
-          <p className="mt-3 text-xl leading-snug text-black/80">{data.product.tagline}</p>
-          <p className="mt-4 max-w-3xl leading-relaxed text-black/70">{data.product.description}</p>
+          <p className="mt-3 break-words text-xl leading-snug text-black/80">{data.product.tagline}</p>
+          <p className="mt-4 max-w-3xl break-words leading-relaxed text-black/70">{data.product.description}</p>
           {data.media.length > 0 ? (
             <div className="mt-6 grid gap-3 grid-cols-1 md:grid-cols-2">
               {data.media.map((media) => {

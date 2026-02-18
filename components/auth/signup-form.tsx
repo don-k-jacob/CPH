@@ -20,9 +20,9 @@ export function SignupForm() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        name: String(formData.get("name") ?? ""),
-        username: String(formData.get("username") ?? ""),
-        email: String(formData.get("email") ?? ""),
+        name: String(formData.get("name") ?? "").trim(),
+        username: String(formData.get("username") ?? "").trim(),
+        email: String(formData.get("email") ?? "").trim(),
         password: String(formData.get("password") ?? "")
       })
     });
@@ -48,11 +48,11 @@ export function SignupForm() {
       </div>
       <div>
         <label className="mb-1 block text-sm font-semibold">Username</label>
-        <input name="username" required className="input-field" />
+        <input name="username" required className="input-field" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       </div>
       <div>
         <label className="mb-1 block text-sm font-semibold">Email</label>
-        <input name="email" type="email" required className="input-field" />
+        <input name="email" type="email" required className="input-field" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       </div>
       <div>
         <label className="mb-1 block text-sm font-semibold">Password</label>

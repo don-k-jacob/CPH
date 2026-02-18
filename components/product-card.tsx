@@ -21,12 +21,12 @@ export function ProductCard(props: ProductCardProps) {
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-black/45">#{props.rank} today</p>
           <Link
             href={`/products/${props.productSlug}`}
-            className="block text-xl font-bold leading-tight transition-colors hover:text-accent sm:text-2xl"
+            className="block break-words text-xl font-bold leading-tight transition-colors hover:text-accent sm:text-2xl"
             style={{ fontFamily: "var(--font-display)" }}
           >
             {props.name}
           </Link>
-          <p className="mt-2 text-[15px] leading-snug text-black/72">{props.tagline}</p>
+          <p className="mt-2 break-words text-[15px] leading-snug text-black/72">{props.tagline}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {props.topics.map((topic) => (
               <Link

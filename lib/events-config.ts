@@ -46,41 +46,59 @@ const EVENTS: EventConfig[] = [
     slug: "lent-hack-2026",
     title: "Lent Hack 2026",
     description:
-      "A Catholic product sprint where makers commit to build one meaningful feature or one complete tool in the spirit of discipline, service, and excellence.",
-    tagline: "This Lent... Don't Just Fast. Build.",
-    dateRange: "March 2, 2026 - April 12, 2026",
-    tags: ["Hybrid sessions + Discord", "Team or Individual"],
+      "A 50-day challenge for developers, designers, and innovators to build products that help people grow spiritually or help the Church take its next leap into the future.",
+    tagline: "Build What's Eternal. This Lent, don't just give up something. Build something.",
+    dateRange: "February 18, 2026 – Easter Week 2026",
+    tags: ["50-day challenge", "Team or Individual", "WhatsApp Community"],
     imagePath: "/lent-hack-logo.png",
-    imageAlt: "Lent Hack — This Lent... Don't Just Fast. Build.",
-    location: "Hybrid",
+    imageAlt: "Lent Hack — Build What's Eternal.",
+    location: "Online",
     format: "Public",
-    tracks: ["FaithTech", "Education", "Parish Ops", "Charity"],
-    whoCanParticipate: "Team or individual. All builders welcome.",
+    tracks: ["FaithTech", "Education", "Parish Ops", "Digital Mission"],
+    whoCanParticipate: "Developers, designers, and innovators. Team or individual. All builders welcome.",
     about: [
-      "Lent Hack is a product sprint where makers commit to build one meaningful feature or one complete tool in the spirit of discipline, service, and excellence.",
-      "Create tools for parish life, catechesis, outreach, and family formation. Weekly office hours from Catholic product leaders and engineers. Pitch your build at the final showcase."
+      "We are calling all developers, designers, and innovators to a 50-day challenge. Our mission? To create products that help people grow spiritually or help the Church take its next giant leap into the future.",
+      "The prompt is simple: Build a NEW product or tool in 50 days. Whether it's an AI-powered prayer assistant, a community coordination platform, a liturgical tool, or a digital mission experience—if it serves the Kingdom, we want to see it."
     ],
-    whatToBuild: "One meaningful feature or one complete tool for mission: parish life, catechesis, education, or charity infrastructure.",
-    whatToSubmit: ["Project name and short description", "Link to repo or demo", "Optional 2-minute demo video"],
+    whatToBuild:
+      "Build a NEW product or tool in 50 days. Examples: AI-powered prayer assistant, community coordination platform, liturgical tool, or digital mission experience. If it serves the Kingdom, we want to see it.",
+    whatToSubmit: [
+      "Phase 1 (Ideation): Submit a Problem Statement or Product Concept to the Ideation Board.",
+      "Phase 2 (The Build): Form teams, join Discord/WhatsApp technical channels, develop your MVP. Weekly check-in calls and mentorship from Tech Mission team.",
+      "Phase 3 (Submission): Submit your GitHub repo, deployed website or app, and a 3-minute demo video on how the app works. Deadline: Easter Week."
+    ],
     sections: [
-      ["Build for Mission", "Create tools for parish life, catechesis, outreach, and family formation."],
-      ["Mentorship", "Weekly office hours from Catholic product leaders and engineers."],
-      ["Tracks", "FaithTech, Education, Parish Ops, and Charity Infrastructure."],
-      ["Final Showcase", "Pitch your build to judges and the broader community."]
+      [
+        "Why Participate?",
+        "Purpose-Driven Code: Shift your focus from deprivation to creation. Use your professional skills for a higher mission. Community: Connect with like-minded Catholic/Christian techies who share your passion for faith and innovation. Impact: Your project could be the tool that helps thousands of people pray better or helps a parish run more effectively."
+      ],
+      [
+        "Phase 1: Ideation (The Seed)",
+        "Identify the Need. Don't have a team or a line of code yet? No problem. Submit a Problem Statement or a Product Concept to our Ideation Board. Goal: Surface the most impactful ideas that developers can then choose to build."
+      ],
+      [
+        "Phase 2: The Build (The Growth)",
+        "Build the Solution. This is the 50-day sprint. Pick an idea from the Ideation Phase—or bring your own—and start crafting. Form teams, join the Discord/WhatsApp technical channels, and develop your MVP. Support: Weekly check-in calls and mentorship from the Tech Mission team."
+      ],
+      [
+        "Phase 3: Submission (The Harvest)",
+        "Easter Week: Show the Fruit. Finalize your code, record your demo, and show the world what can be built in 50 days of prayer and work. Submit your GitHub repo, deployed website or app, and a 3-minute demo video on how the app works."
+      ],
+      [
+        "Ready to Start?",
+        "The journey begins on Ash Wednesday. Join the WhatsApp Community for more information and weekly check-ins. Scan the QR code (on the event page or community) to join."
+      ]
     ].map(([title, body]) => ({ title, body })),
     timeline: [
-      "Applications Open: February 20, 2026",
-      "Team Matching Sprint: February 24 - March 1",
-      "Kickoff Session: March 2",
-      "Build Weeks: March 3 - April 6",
-      "Mentor Reviews: Every Saturday",
-      "Final Demo Day: April 12"
+      "Launch: Ash Wednesday (February 18, 2026)",
+      "The Build: 50 Days of Innovation",
+      "Submission Deadline: Easter Week"
     ],
-    prizes: [{ label: "Community showcase", detail: "Featured on Catholic Product Hunt" }],
+    prizes: [{ label: "Community showcase", detail: "Featured on Catholic Product Hunt and the broader community." }],
     judgingCriteria: [
-      { name: "Impact & relevance", description: "Solves a real need for users and mission." },
-      { name: "Technical quality", description: "Clean implementation and sensible architecture." },
-      { name: "Presentation", description: "Clear demo and communication." }
+      { name: "Impact & relevance", description: "Serves the Kingdom; helps people grow spiritually or the Church move forward." },
+      { name: "Technical quality", description: "Solid implementation and sensible architecture." },
+      { name: "Presentation", description: "Clear 3-minute demo and communication." }
     ]
   }
 ];

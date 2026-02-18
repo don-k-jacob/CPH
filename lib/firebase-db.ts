@@ -8,6 +8,12 @@ export type UserRecord = {
   name: string;
   bio: string | null;
   avatarUrl: string | null;
+  /** Short experience / background (e.g. "Full-stack dev, 5 years" or "Student, designer") */
+  experience: string | null;
+  linkedInUrl: string | null;
+  xUrl: string | null;
+  githubUrl: string | null;
+  websiteUrl: string | null;
   role: "USER" | "MODERATOR" | "ADMIN";
   createdAt: string;
   updatedAt: string;
@@ -74,6 +80,9 @@ export type NotificationRecord = {
   createdAt: string;
 };
 
+/** Teammate preference from short registration form (Devpost-style). */
+export type TeammatePreference = "solo" | "looking" | "team";
+
 export type EventRegistrationRecord = {
   id: string;
   eventSlug: string;
@@ -83,6 +92,12 @@ export type EventRegistrationRecord = {
   projectName: string;
   skills: string[];
   bio: string;
+  /** From short form: Working solo / Looking for teammates / Already have a team */
+  teammatePreference: TeammatePreference | null;
+  /** How they heard about the event */
+  referralSource: string | null;
+  eligibilityAgreed: boolean;
+  rulesAgreed: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -95,6 +110,76 @@ export type TeammatePostRecord = {
   lookingFor: string[];
   message: string;
   createdAt: string;
+};
+
+/** Team member on an event application (like YC co-founder). */
+export type EventApplicationTeamMember = {
+  email: string;
+  userId: string | null;
+  status: "invited" | "profile_incomplete" | "complete";
+};
+
+/** YC-style application sections. All fields optional for draft. */
+export type EventApplicationSections = {
+  // Founders / Team
+  foundersKnownHowLong?: string;
+  whoWritesCode?: string;
+  lookingForCofounder?: string;
+  founderVideoUrl?: string;
+  // Company / Project
+  companyName?: string;
+  tagline50?: string;
+  companyUrl?: string;
+  demoVideoUrl?: string;
+  demoFileUrl?: string;
+  productLink?: string;
+  productLinkCredentials?: string;
+  whatWillYouMake?: string;
+  location?: string;
+  locationReason?: string;
+  // Progress
+  howFarAlong?: string;
+  howLongWorking?: string;
+  techStack?: string;
+  codingSessionUrl?: string;
+  peopleUsingProduct?: "yes" | "no";
+  haveRevenue?: "yes" | "no";
+  previousBatchChange?: string;
+  otherIncubator?: string;
+  // Idea
+  whyThisIdea?: string;
+  competitors?: string;
+  howMakeMoney?: string;
+  category?: string;
+  otherIdeas?: string;
+  // Equity (optional)
+  legalEntity?: "yes" | "no";
+  equityBreakdown?: string;
+  takenInvestment?: "yes" | "no";
+  currentlyFundraising?: "yes" | "no";
+  // Catholic Mission
+  catholicMission?: string;
+  churchProblem?: string;
+  catholicTeachingAlignment?: string;
+  churchAudience?: string;
+  faithGrowth?: string;
+  // Curious
+  whyApply?: string;
+  howHear?: string;
+  // Track
+  trackPreference?: string;
+};
+
+export type EventApplicationRecord = {
+  id: string;
+  eventSlug: string;
+  userId: string;
+  status: "draft" | "submitted";
+  submittedAt: string | null;
+  teamMembers: EventApplicationTeamMember[];
+  sections: EventApplicationSections;
+  createdAt: string;
+  updatedAt: string;
 };
 
 function asISOString(value: unknown): string {
@@ -120,6 +205,11 @@ function normalizeUser(id: string, data: Record<string, unknown>): UserRecord {
     name: String(data.name ?? ""),
     bio: data.bio ? String(data.bio) : null,
     avatarUrl: data.avatarUrl ? String(data.avatarUrl) : null,
+    experience: data.experience ? String(data.experience) : null,
+    linkedInUrl: data.linkedInUrl ? String(data.linkedInUrl) : null,
+    xUrl: data.xUrl ? String(data.xUrl) : null,
+    githubUrl: data.githubUrl ? String(data.githubUrl) : null,
+    websiteUrl: data.websiteUrl ? String(data.websiteUrl) : null,
     role: (data.role as UserRecord["role"]) ?? "USER",
     createdAt: asISOString(data.createdAt),
     updatedAt: asISOString(data.updatedAt)
@@ -200,6 +290,7 @@ function normalizeNotification(id: string, data: Record<string, unknown>): Notif
 }
 
 function normalizeEventRegistration(id: string, data: Record<string, unknown>): EventRegistrationRecord {
+  const teammatePreference = data.teammatePreference as TeammatePreference | undefined;
   return {
     id,
     eventSlug: String(data.eventSlug ?? ""),
@@ -209,6 +300,10 @@ function normalizeEventRegistration(id: string, data: Record<string, unknown>): 
     projectName: String(data.projectName ?? ""),
     skills: Array.isArray(data.skills) ? data.skills.map(String) : [],
     bio: String(data.bio ?? ""),
+    teammatePreference: teammatePreference === "solo" || teammatePreference === "looking" || teammatePreference === "team" ? teammatePreference : null,
+    referralSource: data.referralSource ? String(data.referralSource) : null,
+    eligibilityAgreed: Boolean(data.eligibilityAgreed),
+    rulesAgreed: Boolean(data.rulesAgreed),
     createdAt: asISOString(data.createdAt),
     updatedAt: asISOString(data.updatedAt)
   };
@@ -226,40 +321,106 @@ function normalizeTeammatePost(id: string, data: Record<string, unknown>): Teamm
   };
 }
 
+function normalizeTeamMember(raw: unknown): EventApplicationTeamMember {
+  if (raw && typeof raw === "object" && "email" in raw) {
+    const o = raw as Record<string, unknown>;
+    return {
+      email: String(o.email ?? ""),
+      userId: o.userId ? String(o.userId) : null,
+      status: (o.status as EventApplicationTeamMember["status"]) ?? "invited"
+    };
+  }
+  return { email: "", userId: null, status: "invited" };
+}
+
+function normalizeEventApplication(id: string, data: Record<string, unknown>): EventApplicationRecord {
+  const teamMembers = Array.isArray(data.teamMembers)
+    ? (data.teamMembers as unknown[]).map(normalizeTeamMember)
+    : [];
+  const sections = (data.sections && typeof data.sections === "object" && !Array.isArray(data.sections))
+    ? (data.sections as EventApplicationSections)
+    : {};
+  return {
+    id,
+    eventSlug: String(data.eventSlug ?? ""),
+    userId: String(data.userId ?? ""),
+    status: (data.status as EventApplicationRecord["status"]) ?? "draft",
+    submittedAt: data.submittedAt ? asISOString(data.submittedAt) : null,
+    teamMembers,
+    sections: sections as EventApplicationSections,
+    createdAt: asISOString(data.createdAt),
+    updatedAt: asISOString(data.updatedAt)
+  };
+}
+
 function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
 }
 
-const users = getFirestore().collection("users");
-const topics = getFirestore().collection("topics");
-const products = getFirestore().collection("products");
-const launches = getFirestore().collection("launches");
-const productMedia = getFirestore().collection("productMedia");
-const upvotes = getFirestore().collection("upvotes");
-const comments = getFirestore().collection("comments");
-const follows = getFirestore().collection("follows");
-const reports = getFirestore().collection("reports");
-const notifications = getFirestore().collection("notifications");
-const collections = getFirestore().collection("collections");
-const collectionItems = getFirestore().collection("collectionItems");
-const eventRegistrations = getFirestore().collection("eventRegistrations");
-const teammatePosts = getFirestore().collection("teammatePosts");
+/** Lazy refs so Firebase is not initialized at module load (build can run without env). */
+const db = {
+  get users() {
+    return getFirestore().collection("users");
+  },
+  get topics() {
+    return getFirestore().collection("topics");
+  },
+  get products() {
+    return getFirestore().collection("products");
+  },
+  get launches() {
+    return getFirestore().collection("launches");
+  },
+  get productMedia() {
+    return getFirestore().collection("productMedia");
+  },
+  get upvotes() {
+    return getFirestore().collection("upvotes");
+  },
+  get comments() {
+    return getFirestore().collection("comments");
+  },
+  get follows() {
+    return getFirestore().collection("follows");
+  },
+  get reports() {
+    return getFirestore().collection("reports");
+  },
+  get notifications() {
+    return getFirestore().collection("notifications");
+  },
+  get collections() {
+    return getFirestore().collection("collections");
+  },
+  get collectionItems() {
+    return getFirestore().collection("collectionItems");
+  },
+  get eventRegistrations() {
+    return getFirestore().collection("eventRegistrations");
+  },
+  get teammatePosts() {
+    return getFirestore().collection("teammatePosts");
+  },
+  get eventApplications() {
+    return getFirestore().collection("eventApplications");
+  }
+};
 
 export async function getUserById(userId: string): Promise<UserRecord | null> {
-  const snap = await users.doc(userId).get();
+  const snap = await db.users.doc(userId).get();
   if (!snap.exists) return null;
   return normalizeUser(snap.id, snap.data()!);
 }
 
 export async function getUserByEmail(email: string): Promise<UserRecord | null> {
-  const snap = await users.where("email", "==", email.toLowerCase()).limit(1).get();
+  const snap = await db.users.where("email", "==", email.toLowerCase()).limit(1).get();
   if (snap.empty) return null;
   const doc = snap.docs[0]!;
   return normalizeUser(doc.id, doc.data());
 }
 
 export async function getUserByUsername(username: string): Promise<UserRecord | null> {
-  const snap = await users.where("username", "==", username.toLowerCase()).limit(1).get();
+  const snap = await db.users.where("username", "==", username.toLowerCase()).limit(1).get();
   if (snap.empty) return null;
   const doc = snap.docs[0]!;
   return normalizeUser(doc.id, doc.data());
@@ -272,7 +433,7 @@ export async function createUser(data: {
   name: string;
 }): Promise<UserRecord> {
   const now = nowIso();
-  const doc = users.doc();
+  const doc = db.users.doc();
   await doc.set({
     email: data.email.toLowerCase(),
     username: data.username.toLowerCase(),
@@ -280,6 +441,11 @@ export async function createUser(data: {
     name: data.name,
     bio: null,
     avatarUrl: null,
+    experience: null,
+    linkedInUrl: null,
+    xUrl: null,
+    githubUrl: null,
+    websiteUrl: null,
     role: "USER",
     createdAt: now,
     updatedAt: now
@@ -287,29 +453,48 @@ export async function createUser(data: {
   return (await getUserById(doc.id))!;
 }
 
+/** True if user has experience and at least one social link (required to register for hackathons). */
+export function isProfileCompleteForHackathon(user: UserRecord): boolean {
+  const experience = user.experience?.trim() ?? "";
+  const hasExperience = experience.length >= 10;
+  const hasSocial =
+    Boolean(user.linkedInUrl?.trim()) || Boolean(user.xUrl?.trim()) || Boolean(user.githubUrl?.trim());
+  return hasExperience && hasSocial;
+}
+
 export async function updateUserProfile(userId: string, data: {
   name: string;
   username: string;
   bio: string | null;
   avatarUrl: string | null;
+  experience: string | null;
+  linkedInUrl: string | null;
+  xUrl: string | null;
+  githubUrl: string | null;
+  websiteUrl: string | null;
 }): Promise<void> {
-  await users.doc(userId).update({
+  await db.users.doc(userId).update({
     name: data.name,
     username: data.username.toLowerCase(),
     bio: data.bio,
     avatarUrl: data.avatarUrl,
+    experience: data.experience ?? null,
+    linkedInUrl: data.linkedInUrl ?? null,
+    xUrl: data.xUrl ?? null,
+    githubUrl: data.githubUrl ?? null,
+    websiteUrl: data.websiteUrl ?? null,
     updatedAt: nowIso()
   });
 }
 
 export async function createTopicIfMissing(name: string, slug: string): Promise<TopicRecord> {
-  const existing = await topics.where("slug", "==", slug).limit(1).get();
+  const existing = await db.topics.where("slug", "==", slug).limit(1).get();
   if (!existing.empty) {
     const doc = existing.docs[0]!;
     return normalizeTopic(doc.id, doc.data());
   }
 
-  const doc = topics.doc();
+  const doc = db.topics.doc();
   await doc.set({
     name,
     slug,
@@ -320,12 +505,12 @@ export async function createTopicIfMissing(name: string, slug: string): Promise<
 }
 
 export async function getTopicBySlugWithProducts(slug: string) {
-  const topicSnap = await topics.where("slug", "==", slug).limit(1).get();
+  const topicSnap = await db.topics.where("slug", "==", slug).limit(1).get();
   if (topicSnap.empty) return null;
   const topicDoc = topicSnap.docs[0]!;
   const topic = normalizeTopic(topicDoc.id, topicDoc.data());
 
-  const productSnap = await products.where("topicSlugs", "array-contains", slug).orderBy("createdAt", "desc").get();
+  const productSnap = await db.products.where("topicSlugs", "array-contains", slug).orderBy("createdAt", "desc").get();
   const productRecords = productSnap.docs.map((d) => normalizeProduct(d.id, d.data()));
 
   const makerIds: string[] = unique(productRecords.map((p) => p.makerId));
@@ -347,7 +532,7 @@ export async function getTopicBySlugWithProducts(slug: string) {
 }
 
 export async function getCollectionBySlug(slug: string) {
-  const collectionSnap = await collections.where("slug", "==", slug).limit(1).get();
+  const collectionSnap = await db.collections.where("slug", "==", slug).limit(1).get();
   if (collectionSnap.empty) return null;
   const collectionDoc = collectionSnap.docs[0]!;
   const raw = collectionDoc.data() as Record<string, unknown>;
@@ -360,7 +545,7 @@ export async function getCollectionBySlug(slug: string) {
     createdAt: asISOString(raw.createdAt)
   };
 
-  const itemSnap = await collectionItems
+  const itemSnap = await db.collectionItems
     .where("collectionId", "==", collectionDoc.id)
     .orderBy("position", "asc")
     .get();
@@ -388,25 +573,25 @@ export async function getCollectionBySlug(slug: string) {
 }
 
 export async function getProductById(productId: string): Promise<ProductRecord | null> {
-  const snap = await products.doc(productId).get();
+  const snap = await db.products.doc(productId).get();
   if (!snap.exists) return null;
   return normalizeProduct(snap.id, snap.data()!);
 }
 
 export async function getProductBySlug(slug: string): Promise<ProductRecord | null> {
-  const snap = await products.where("slug", "==", slug).limit(1).get();
+  const snap = await db.products.where("slug", "==", slug).limit(1).get();
   if (snap.empty) return null;
   const doc = snap.docs[0]!;
   return normalizeProduct(doc.id, doc.data());
 }
 
 export async function getProductMedia(productId: string): Promise<ProductMediaRecord[]> {
-  const snap = await productMedia.where("productId", "==", productId).orderBy("createdAt", "asc").get();
+  const snap = await db.productMedia.where("productId", "==", productId).orderBy("createdAt", "asc").get();
   return snap.docs.map((d) => normalizeMedia(d.id, d.data()));
 }
 
 export async function getLatestLiveLaunchForProduct(productId: string): Promise<LaunchRecord | null> {
-  const snap = await launches
+  const snap = await db.launches
     .where("productId", "==", productId)
     .where("status", "==", "LIVE")
     .orderBy("launchDate", "desc")
@@ -418,15 +603,15 @@ export async function getLatestLiveLaunchForProduct(productId: string): Promise<
 }
 
 export async function getLaunchById(launchId: string): Promise<LaunchRecord | null> {
-  const snap = await launches.doc(launchId).get();
+  const snap = await db.launches.doc(launchId).get();
   if (!snap.exists) return null;
   return normalizeLaunch(snap.id, snap.data()!);
 }
 
 export async function getLaunchCounts(launchId: string): Promise<{ upvotes: number; comments: number }> {
   const [upvoteSnap, commentSnap] = await Promise.all([
-    upvotes.where("launchId", "==", launchId).count().get(),
-    comments.where("launchId", "==", launchId).count().get()
+    db.upvotes.where("launchId", "==", launchId).count().get(),
+    db.comments.where("launchId", "==", launchId).count().get()
   ]);
 
   return {
@@ -436,7 +621,7 @@ export async function getLaunchCounts(launchId: string): Promise<{ upvotes: numb
 }
 
 export async function getLaunchCommentsTree(launchId: string) {
-  const snap = await comments.where("launchId", "==", launchId).orderBy("createdAt", "desc").get();
+  const snap = await db.comments.where("launchId", "==", launchId).orderBy("createdAt", "desc").get();
   const all = snap.docs.map((d) => normalizeComment(d.id, d.data()));
   const usersNeeded: string[] = unique(all.map((c) => c.userId));
   const usersMap = new Map<string, UserRecord>();
@@ -473,7 +658,7 @@ export async function createComment(data: {
   body: string;
   parentId?: string;
 }) {
-  const doc = comments.doc();
+  const doc = db.comments.doc();
   await doc.set({
     launchId: data.launchId,
     userId: data.userId,
@@ -488,7 +673,7 @@ export async function createComment(data: {
 
 export async function upvoteLaunch(launchId: string, userId: string): Promise<number> {
   const key = `${userId}_${launchId}`;
-  const ref = upvotes.doc(key);
+  const ref = db.upvotes.doc(key);
   const snap = await ref.get();
   if (!snap.exists) {
     await ref.set({
@@ -498,13 +683,13 @@ export async function upvoteLaunch(launchId: string, userId: string): Promise<nu
     });
   }
 
-  const countSnap = await upvotes.where("launchId", "==", launchId).count().get();
+  const countSnap = await db.upvotes.where("launchId", "==", launchId).count().get();
   return countSnap.data().count;
 }
 
 export async function followUser(followerId: string, followeeId: string): Promise<number> {
   const key = `${followerId}_${followeeId}`;
-  const ref = follows.doc(key);
+  const ref = db.follows.doc(key);
   const snap = await ref.get();
   if (!snap.exists) {
     await ref.set({
@@ -514,7 +699,7 @@ export async function followUser(followerId: string, followeeId: string): Promis
     });
   }
 
-  const countSnap = await follows.where("followeeId", "==", followeeId).count().get();
+  const countSnap = await db.follows.where("followeeId", "==", followeeId).count().get();
   return countSnap.data().count;
 }
 
@@ -524,7 +709,7 @@ export async function createReport(data: {
   reason: "SPAM" | "ABUSE" | "SCAM" | "OTHER";
   details?: string;
 }): Promise<string> {
-  const doc = reports.doc();
+  const doc = db.reports.doc();
   await doc.set({
     launchId: data.launchId,
     reporterId: data.reporterId,
@@ -537,7 +722,7 @@ export async function createReport(data: {
 }
 
 export async function getNotificationsForUser(userId: string): Promise<NotificationRecord[]> {
-  const snap = await notifications.where("userId", "==", userId).orderBy("createdAt", "desc").limit(30).get();
+  const snap = await db.notifications.where("userId", "==", userId).orderBy("createdAt", "desc").limit(30).get();
   return snap.docs.map((d) => normalizeNotification(d.id, d.data()));
 }
 
@@ -569,7 +754,7 @@ export async function createProductWithLaunch(data: {
     topicSlugs.push(slug);
   }
 
-  const productRef = products.doc();
+  const productRef = db.products.doc();
   await productRef.set({
     name: data.name,
     slug: data.slug,
@@ -584,7 +769,7 @@ export async function createProductWithLaunch(data: {
     updatedAt: now
   });
 
-  const launchRef = launches.doc();
+  const launchRef = db.launches.doc();
   await launchRef.set({
     productId: productRef.id,
     hunterId: data.makerId,
@@ -597,7 +782,7 @@ export async function createProductWithLaunch(data: {
 
   await Promise.all(
     data.media.map(async (item) => {
-      const mediaRef = productMedia.doc();
+      const mediaRef = db.productMedia.doc();
       await mediaRef.set({
         productId: productRef.id,
         type: item.type,
@@ -611,7 +796,7 @@ export async function createProductWithLaunch(data: {
 }
 
 export async function getFeedLaunches(topicSlug?: string) {
-  const launchSnap = await launches.where("status", "==", "LIVE").orderBy("launchDate", "desc").limit(30).get();
+  const launchSnap = await db.launches.where("status", "==", "LIVE").orderBy("launchDate", "desc").limit(30).get();
   const launchRecords = launchSnap.docs.map((d) => normalizeLaunch(d.id, d.data()));
 
   const productIds: string[] = unique(launchRecords.map((l) => l.productId));
@@ -650,7 +835,7 @@ export async function getFeedLaunches(topicSlug?: string) {
       const [counts, topicDocs] = await Promise.all([
         getLaunchCounts(launch.id),
         Promise.all(product.topicSlugs.map(async (slug) => {
-          const snap = await topics.where("slug", "==", slug).limit(1).get();
+          const snap = await db.topics.where("slug", "==", slug).limit(1).get();
           if (snap.empty) return null;
           const d = snap.docs[0]!;
           return normalizeTopic(d.id, d.data());
@@ -682,7 +867,7 @@ export async function getProductPageBySlug(slug: string) {
 
   const topicDocs = await Promise.all(
     product.topicSlugs.map(async (topicSlug) => {
-      const snap = await topics.where("slug", "==", topicSlug).limit(1).get();
+      const snap = await db.topics.where("slug", "==", topicSlug).limit(1).get();
       if (snap.empty) return null;
       const d = snap.docs[0]!;
       return normalizeTopic(d.id, d.data());
@@ -718,9 +903,9 @@ export async function getProductPageBySlug(slug: string) {
 export async function searchAll(query: string) {
   const q = query.toLowerCase();
   const [productSnap, userSnap, topicSnap] = await Promise.all([
-    products.orderBy("createdAt", "desc").limit(120).get(),
-    users.limit(120).get(),
-    topics.limit(120).get()
+    db.products.orderBy("createdAt", "desc").limit(120).get(),
+    db.users.limit(120).get(),
+    db.topics.limit(120).get()
   ]);
 
   const productRows = productSnap.docs
@@ -761,12 +946,12 @@ export async function getMakerProfile(username: string) {
   const maker = await getUserByUsername(username);
   if (!maker) return null;
 
-  const productsSnap = await products.where("makerId", "==", maker.id).orderBy("createdAt", "desc").get();
+  const productsSnap = await db.products.where("makerId", "==", maker.id).orderBy("createdAt", "desc").get();
   const productRows = productsSnap.docs.map((d) => normalizeProduct(d.id, d.data()));
 
   const [followersSnap, followingSnap] = await Promise.all([
-    follows.where("followeeId", "==", maker.id).count().get(),
-    follows.where("followerId", "==", maker.id).count().get()
+    db.follows.where("followeeId", "==", maker.id).count().get(),
+    db.follows.where("followerId", "==", maker.id).count().get()
   ]);
 
   return {
@@ -780,7 +965,7 @@ export async function getMakerProfile(username: string) {
 }
 
 export async function getUpcomingLaunches() {
-  const snap = await launches.where("status", "==", "SCHEDULED").orderBy("launchDate", "asc").get();
+  const snap = await db.launches.where("status", "==", "SCHEDULED").orderBy("launchDate", "asc").get();
   const rows = snap.docs.map((d) => normalizeLaunch(d.id, d.data()));
   return Promise.all(
     rows.map(async (launch) => ({
@@ -791,7 +976,7 @@ export async function getUpcomingLaunches() {
 }
 
 export async function getAllProductsWithCounts() {
-  const snap = await products.orderBy("createdAt", "desc").limit(150).get();
+  const snap = await db.products.orderBy("createdAt", "desc").limit(150).get();
   const rows = snap.docs.map((d) => normalizeProduct(d.id, d.data()));
 
   return Promise.all(
@@ -804,7 +989,7 @@ export async function getAllProductsWithCounts() {
 }
 
 export async function getProductsForMaker(makerId: string) {
-  const snap = await products.where("makerId", "==", makerId).orderBy("createdAt", "desc").get();
+  const snap = await db.products.where("makerId", "==", makerId).orderBy("createdAt", "desc").get();
   const rows = snap.docs.map((d) => normalizeProduct(d.id, d.data()));
   return Promise.all(
     rows.map(async (product) => {
@@ -821,41 +1006,224 @@ export async function findProductBySlug(slug: string): Promise<ProductRecord | n
 
 export async function getEventRegistrationByUser(eventSlug: string, userId: string): Promise<EventRegistrationRecord | null> {
   const docId = `${eventSlug}_${userId}`;
-  const snap = await eventRegistrations.doc(docId).get();
+  const snap = await db.eventRegistrations.doc(docId).get();
   if (!snap.exists) return null;
   return normalizeEventRegistration(snap.id, snap.data()!);
+}
+
+/** List all registrations for an event with user name/username for the participant list. */
+export async function getEventRegistrations(eventSlug: string, limitCount = 200) {
+  const snap = await db.eventRegistrations
+    .where("eventSlug", "==", eventSlug)
+    .orderBy("createdAt", "asc")
+    .limit(limitCount)
+    .get();
+  const rows = snap.docs
+    .map((doc) => {
+      const data = doc.data();
+      return data ? normalizeEventRegistration(doc.id, data) : null;
+    })
+    .filter((r): r is EventRegistrationRecord => r !== null);
+  const userIds: string[] = unique(rows.map((r) => r.userId));
+  const usersMap = new Map<string, UserRecord>();
+  await Promise.all(
+    userIds.map(async (id) => {
+      const user = await getUserById(id);
+      if (user) usersMap.set(id, user);
+    })
+  );
+  return rows.map((row) => ({
+    ...row,
+    user: usersMap.get(row.userId) ?? null
+  }));
 }
 
 export async function upsertEventRegistration(data: {
   eventSlug: string;
   userId: string;
-  participationType: "TEAM" | "INDIVIDUAL";
+  participationType?: "TEAM" | "INDIVIDUAL";
   teamName?: string | null;
-  projectName: string;
-  skills: string[];
-  bio: string;
+  projectName?: string;
+  skills?: string[];
+  bio?: string;
+  teammatePreference?: TeammatePreference | null;
+  referralSource?: string | null;
+  eligibilityAgreed?: boolean;
+  rulesAgreed?: boolean;
 }) {
   const docId = `${data.eventSlug}_${data.userId}`;
   const now = nowIso();
-  const ref = eventRegistrations.doc(docId);
+  const ref = db.eventRegistrations.doc(docId);
   const existing = await ref.get();
+  const existingData = existing.exists ? existing.data() : null;
+  const participationType =
+    data.participationType ??
+    (data.teammatePreference === "team" ? "TEAM" : "INDIVIDUAL") as "TEAM" | "INDIVIDUAL";
 
   await ref.set(
     {
       eventSlug: data.eventSlug,
       userId: data.userId,
-      participationType: data.participationType,
-      teamName: data.participationType === "TEAM" ? data.teamName ?? null : null,
-      projectName: data.projectName,
-      skills: data.skills,
-      bio: data.bio,
-      createdAt: existing.exists ? existing.data()?.createdAt ?? now : now,
+      participationType,
+      teamName: data.teamName ?? (existingData?.teamName ?? null),
+      projectName: data.projectName ?? existingData?.projectName ?? "",
+      skills: data.skills ?? existingData?.skills ?? [],
+      bio: data.bio ?? existingData?.bio ?? "",
+      teammatePreference: data.teammatePreference ?? existingData?.teammatePreference ?? null,
+      referralSource: data.referralSource ?? existingData?.referralSource ?? null,
+      eligibilityAgreed: data.eligibilityAgreed ?? existingData?.eligibilityAgreed ?? false,
+      rulesAgreed: data.rulesAgreed ?? existingData?.rulesAgreed ?? false,
+      createdAt: existing.exists ? existingData?.createdAt ?? now : now,
       updatedAt: now
     },
     { merge: true }
   );
 
   return (await ref.get()).data();
+}
+
+export async function getEventApplicationByUser(eventSlug: string, userId: string): Promise<EventApplicationRecord | null> {
+  const docId = `${eventSlug}_${userId}`;
+  const snap = await db.eventApplications.doc(docId).get();
+  if (!snap.exists) return null;
+  return normalizeEventApplication(snap.id, snap.data()!);
+}
+
+/** Refresh team member statuses (invited / profile_incomplete / complete) from current user data. */
+export async function refreshEventApplicationTeamStatuses(
+  teamMembers: EventApplicationTeamMember[]
+): Promise<EventApplicationTeamMember[]> {
+  return Promise.all(
+    teamMembers.map(async (m) => {
+      if (!m.email) return m;
+      const user = await getUserByEmail(m.email);
+      const status: EventApplicationTeamMember["status"] = !user
+        ? "invited"
+        : isProfileCompleteForHackathon(user)
+          ? "complete"
+          : "profile_incomplete";
+      return { ...m, userId: user?.id ?? null, status };
+    })
+  );
+}
+
+export async function upsertEventApplicationDraft(data: {
+  eventSlug: string;
+  userId: string;
+  teamMembers: EventApplicationTeamMember[];
+  sections: EventApplicationSections;
+}): Promise<EventApplicationRecord> {
+  const docId = `${data.eventSlug}_${data.userId}`;
+  const now = nowIso();
+  const ref = db.eventApplications.doc(docId);
+  const existing = await ref.get();
+  const existingData = existing.exists ? existing.data() : null;
+  const status = existingData?.status === "submitted" ? "submitted" : "draft";
+  const submittedAt = existingData?.submittedAt ?? null;
+
+  await ref.set(
+    {
+      eventSlug: data.eventSlug,
+      userId: data.userId,
+      status,
+      submittedAt,
+      teamMembers: data.teamMembers,
+      sections: data.sections,
+      createdAt: existing.exists ? existingData?.createdAt ?? now : now,
+      updatedAt: now
+    },
+    { merge: true }
+  );
+  const updated = await ref.get();
+  return normalizeEventApplication(updated.id, updated.data()!);
+}
+
+export async function submitEventApplication(eventSlug: string, userId: string): Promise<{ ok: true } | { error: string }> {
+  const docId = `${eventSlug}_${userId}`;
+  const snap = await db.eventApplications.doc(docId).get();
+  if (!snap.exists) {
+    return { error: "Application not found. Save a draft first." };
+  }
+  const app = normalizeEventApplication(snap.id, snap.data()!);
+  if (app.status === "submitted") {
+    return { ok: true };
+  }
+  const incomplete = app.teamMembers.filter((m) => m.status !== "complete" && m.userId);
+  if (incomplete.length > 0) {
+    const emails = incomplete.map((m) => m.email).join(", ");
+    return { error: `${emails} still need to complete their profiles. All team members must complete their profiles to submit.` };
+  }
+  const now = nowIso();
+  await db.eventApplications.doc(docId).update({ status: "submitted", submittedAt: now, updatedAt: now });
+  return { ok: true };
+}
+
+export async function addEventApplicationTeamMember(
+  eventSlug: string,
+  userId: string,
+  email: string
+): Promise<{ ok: true; member: EventApplicationTeamMember } | { error: string }> {
+  const docId = `${eventSlug}_${userId}`;
+  const ref = db.eventApplications.doc(docId);
+  const snap = await ref.get();
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) return { error: "Email is required." };
+
+  const existingUser = await getUserByEmail(normalizedEmail);
+  const status: EventApplicationTeamMember["status"] = !existingUser
+    ? "invited"
+    : isProfileCompleteForHackathon(existingUser)
+      ? "complete"
+      : "profile_incomplete";
+
+  const member: EventApplicationTeamMember = {
+    email: normalizedEmail,
+    userId: existingUser?.id ?? null,
+    status
+  };
+
+  if (!snap.exists) {
+    const now = nowIso();
+    await ref.set({
+      eventSlug,
+      userId,
+      status: "draft",
+      submittedAt: null,
+      teamMembers: [member],
+      sections: {},
+      createdAt: now,
+      updatedAt: now
+    });
+  } else {
+    const data = snap.data()!;
+    const teamMembers = Array.isArray(data.teamMembers)
+      ? (data.teamMembers as unknown[]).map(normalizeTeamMember)
+      : [];
+    if (teamMembers.some((m) => m.email === normalizedEmail)) {
+      return { error: "This person is already added." };
+    }
+    teamMembers.push(member);
+    await ref.update({ teamMembers, updatedAt: nowIso() });
+  }
+
+  return { ok: true, member };
+}
+
+export async function removeEventApplicationTeamMember(
+  eventSlug: string,
+  userId: string,
+  email: string
+): Promise<void> {
+  const docId = `${eventSlug}_${userId}`;
+  const ref = db.eventApplications.doc(docId);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  const data = snap.data()!;
+  const teamMembers = Array.isArray(data.teamMembers)
+    ? (data.teamMembers as unknown[]).map(normalizeTeamMember)
+    : [];
+  const filtered = teamMembers.filter((m) => m.email !== email.trim().toLowerCase());
+  await ref.update({ teamMembers: filtered, updatedAt: nowIso() });
 }
 
 export async function createTeammatePost(data: {
@@ -865,7 +1233,7 @@ export async function createTeammatePost(data: {
   lookingFor: string[];
   message: string;
 }) {
-  const ref = teammatePosts.doc();
+  const ref = db.teammatePosts.doc();
   await ref.set({
     eventSlug: data.eventSlug,
     userId: data.userId,
@@ -878,9 +1246,33 @@ export async function createTeammatePost(data: {
   return normalizeTeammatePost(created.id, created.data()!);
 }
 
+export async function updateTeammatePost(
+  postId: string,
+  userId: string,
+  data: { participationType: "TEAM" | "INDIVIDUAL"; lookingFor: string[]; message: string }
+) {
+  const ref = db.teammatePosts.doc(postId);
+  const snap = await ref.get();
+  if (!snap.exists || snap.data()?.userId !== userId) {
+    throw new Error("Teammate post not found or you can only update your own post.");
+  }
+  await ref.update({
+    participationType: data.participationType,
+    lookingFor: data.lookingFor,
+    message: data.message.trim()
+  });
+  const updated = await ref.get();
+  return normalizeTeammatePost(updated.id, updated.data()!);
+}
+
 export async function getTeammatePosts(eventSlug: string, limitCount = 30) {
-  const snap = await teammatePosts.where("eventSlug", "==", eventSlug).orderBy("createdAt", "desc").limit(limitCount).get();
-  const rows = snap.docs.map((doc) => normalizeTeammatePost(doc.id, doc.data()));
+  const snap = await db.teammatePosts.where("eventSlug", "==", eventSlug).orderBy("createdAt", "desc").limit(limitCount).get();
+  const rows = snap.docs
+    .map((doc) => {
+      const data = doc.data();
+      return data ? normalizeTeammatePost(doc.id, data) : null;
+    })
+    .filter((row): row is TeammatePostRecord => row !== null);
   const userIds: string[] = unique(rows.map((row) => row.userId));
   const usersMap = new Map<string, UserRecord>();
 
@@ -899,10 +1291,10 @@ export async function getTeammatePosts(eventSlug: string, limitCount = 30) {
 
 export async function getEventStats(eventSlug: string) {
   const [registrationsSnap, teammatesSnap, teamSnap, individualSnap] = await Promise.all([
-    eventRegistrations.where("eventSlug", "==", eventSlug).count().get(),
-    teammatePosts.where("eventSlug", "==", eventSlug).count().get(),
-    eventRegistrations.where("eventSlug", "==", eventSlug).where("participationType", "==", "TEAM").count().get(),
-    eventRegistrations.where("eventSlug", "==", eventSlug).where("participationType", "==", "INDIVIDUAL").count().get()
+    db.eventRegistrations.where("eventSlug", "==", eventSlug).count().get(),
+    db.teammatePosts.where("eventSlug", "==", eventSlug).count().get(),
+    db.eventRegistrations.where("eventSlug", "==", eventSlug).where("participationType", "==", "TEAM").count().get(),
+    db.eventRegistrations.where("eventSlug", "==", eventSlug).where("participationType", "==", "INDIVIDUAL").count().get()
   ]);
 
   return {
@@ -916,13 +1308,13 @@ export async function getEventStats(eventSlug: string) {
 export async function getAdminOverview() {
   const [usersCount, productsCount, launchesCount, commentsCount, upvotesCount, registrationsCount, teammatePostsCount] =
     await Promise.all([
-      users.count().get(),
-      products.count().get(),
-      launches.count().get(),
-      comments.count().get(),
-      upvotes.count().get(),
-      eventRegistrations.count().get(),
-      teammatePosts.count().get()
+      db.users.count().get(),
+      db.products.count().get(),
+      db.launches.count().get(),
+      db.comments.count().get(),
+      db.upvotes.count().get(),
+      db.eventRegistrations.count().get(),
+      db.teammatePosts.count().get()
     ]);
 
   return {

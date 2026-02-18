@@ -12,6 +12,7 @@ service cloud.firestore {
     match /collectionItems/{doc} { allow read: if true; allow write: if false; }
     match /teammatePosts/{doc} { allow read: if true; allow write: if false; }
     match /eventRegistrations/{doc} { allow read: if true; allow write: if false; }
+    match /eventApplications/{doc} { allow read: if true; allow write: if false; }
     match /users/{doc} { allow read: if true; allow write: if false; }
     match /notifications/{doc} { allow read: if false; allow write: if false; }
     match /reports/{doc} { allow read: if false; allow write: if false; }

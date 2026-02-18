@@ -24,6 +24,7 @@ body {
   -webkit-font-smoothing: antialiased;
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 10% 12%, rgba(185, 138, 47, 0.14) 0%, transparent 32%),
     radial-gradient(circle at 88% 9%, rgba(111, 29, 27, 0.12) 0%, transparent 28%),
@@ -54,6 +55,7 @@ textarea:focus-visible {
   max-width: 1120px;
   margin: 0 auto;
   padding: 0 1rem;
+  min-width: 0;
 }
 
 @media (min-width: 640px) {
@@ -68,6 +70,8 @@ textarea:focus-visible {
   border-radius: var(--radius-lg);
   box-shadow: 0 6px 22px rgba(22, 18, 14, 0.08), 0 2px 6px rgba(22, 18, 14, 0.05);
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .card:hover {
@@ -81,6 +85,9 @@ textarea:focus-visible {
   padding: 1rem;
   background: rgba(255, 250, 241, 0.52);
   backdrop-filter: blur(2px);
+  min-width: 0;
+  overflow-x: hidden;
+  word-wrap: break-word;
 }
 
 .section-heading {
@@ -146,6 +153,7 @@ textarea:focus-visible {
 
 .input-field {
   width: 100%;
+  max-width: 100%;
   border-radius: 12px;
   border: 1px solid rgba(41, 31, 24, 0.18);
   background: rgba(255, 255, 255, 0.82);
@@ -155,6 +163,7 @@ textarea:focus-visible {
   font-size: 16px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
 }
 
 textarea.input-field {

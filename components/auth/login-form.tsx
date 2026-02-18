@@ -20,7 +20,7 @@ export function LoginForm() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        email: String(formData.get("email") ?? ""),
+        email: String(formData.get("email") ?? "").trim(),
         password: String(formData.get("password") ?? "")
       })
     });
@@ -42,7 +42,7 @@ export function LoginForm() {
       <h1 className="section-heading text-3xl font-bold">Log in</h1>
       <div>
         <label className="mb-1 block text-sm font-semibold">Email</label>
-        <input name="email" type="email" required className="input-field" />
+        <input name="email" type="email" required className="input-field" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       </div>
       <div>
         <label className="mb-1 block text-sm font-semibold">Password</label>
