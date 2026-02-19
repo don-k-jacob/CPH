@@ -55,13 +55,21 @@ Required vars:
 npm run db:seed
 ```
 
-5. Run:
+5. (For existing legacy Firestore data) migrate to versioned schema:
+
+```bash
+npm run db:schema:status
+npm run db:migrate:v1
+npm run db:schema:status
+```
+
+6. Run:
 
 ```bash
 npm run dev
 ```
 
-6. (Optional) Deploy Firebase rules/indexes:
+7. (Optional) Deploy Firebase rules/indexes:
 
 ```bash
 firebase deploy --only firestore:rules,firestore:indexes,storage
@@ -73,6 +81,11 @@ firebase deploy --only firestore:rules,firestore:indexes,storage
 - `firestore.indexes.json`
 - `storage.rules`
 - `firebase.json`
+
+## DB Docs
+
+- `docs/db/README.md`
+- `docs/db/CHECKLIST.md`
 
 ## Health check
 

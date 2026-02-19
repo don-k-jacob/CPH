@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
-import { getUserByUsername, updateUserProfile } from "@/lib/firebase-db";
+import { getUserByUsername, updateEventRegistrationsUserSnapshot, updateUserProfile } from "@/lib/firebase-db";
 
 const profileSchema = z.object({
   name: z.string().min(2),
@@ -51,6 +51,13 @@ export async function PATCH(request: NextRequest) {
       githubUrl: parsed.githubUrl?.trim() || null,
       websiteUrl: parsed.websiteUrl?.trim() || null
     });
+
+    await updateEventRegistrationsUserSnapshot(user.id, {
+      userName: parsed.name,
+      userUsername: username,
+      userAvatarUrl: parsed.avatarUrl || null,
+      userBio: parsed.bio || null
+    }).catch(() => {});
 
     return NextResponse.json({ ok: true });
   } catch (error) {

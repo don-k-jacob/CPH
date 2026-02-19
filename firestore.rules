@@ -19,6 +19,25 @@ service cloud.firestore {
     match /upvotes/{doc} { allow read: if false; allow write: if false; }
     match /follows/{doc} { allow read: if false; allow write: if false; }
 
+    // Versioned v1 namespace.
+    match /cph_v1_products/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_launches/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_topics/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_productMedia/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_comments/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_collections/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_collectionItems/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_teammatePosts/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_eventRegistrations/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_eventApplications/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_users/{doc} { allow read: if true; allow write: if false; }
+    match /cph_v1_notifications/{doc} { allow read: if false; allow write: if false; }
+    match /cph_v1_reports/{doc} { allow read: if false; allow write: if false; }
+    match /cph_v1_upvotes/{doc} { allow read: if false; allow write: if false; }
+    match /cph_v1_follows/{doc} { allow read: if false; allow write: if false; }
+
+    match /cph_schema_meta/{doc} { allow read: if false; allow write: if false; }
+
     match /{document=**} {
       allow read, write: if false;
     }

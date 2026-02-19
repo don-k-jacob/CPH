@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EventPageTabs } from "@/components/events/event-page-tabs";
-import { JoinEventForm } from "@/components/events/join-event-form";
 import { TeammateBoard } from "@/components/events/teammate-board";
 import { getCurrentUser } from "@/lib/auth";
 import { getEventBySlug } from "@/lib/events-config";
@@ -15,7 +14,7 @@ import {
   getTeammatePosts,
   refreshEventApplicationTeamStatuses
 } from "@/lib/firebase-db";
-import { ParticipantList } from "@/components/events/participant-list";
+import { ParticipantsPanel } from "@/components/events/participants-panel";
 import { EventApplicationForm } from "@/components/events/event-application-form";
 
 export const dynamic = "force-dynamic";
@@ -27,13 +26,15 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return { title: `${event.title} | Catholic Product Hunt` };
 }
 
-const BASE_NAV_ITEMS = [
-  { id: "overview", label: "Overview" },
-  { id: "participants", label: "Participants" },
-  { id: "timeline", label: "Timeline" },
-  { id: "rules", label: "Rules" },
-  { id: "join", label: "Register" }
-];
+function getNavItems(participantCount: number, isRegistered: boolean) {
+  const base = [
+    { id: "overview", label: "Overview" },
+    { id: "participants", label: `Participants (${participantCount})` },
+    { id: "timeline", label: "Timeline" },
+    { id: "rules", label: "Rules" }
+  ];
+  return isRegistered ? [...base, { id: "application", label: "Application" }] : base;
+}
 
 async function getEventData(slug: string) {
   const currentUser = await getCurrentUser().catch(() => null);
@@ -60,8 +61,11 @@ async function getEventData(slug: string) {
     posts = postsData;
     participants = participantsData;
     stats = statsData;
-  } catch {
+  } catch (err) {
     // Firebase unavailable: show page with zero stats and empty lists
+    if (process.env.NODE_ENV === "development") {
+      console.error("[events] getEventData failed for slug=%s:", slug, err);
+    }
   }
   return { currentUser, registration, application, posts, participants, stats };
 }
@@ -76,15 +80,9 @@ export default async function EventBySlugPage({ params }: { params: Promise<{ sl
 
   const { currentUser, registration, application, posts, participants, stats } = await getEventData(slug);
   const totalRegistrations = stats.registrations;
+  const participantCount = participants.length;
   const isRegistered = Boolean(currentUser && registration);
-  const NAV_ITEMS =
-    isRegistered
-      ? [
-          ...BASE_NAV_ITEMS.slice(0, 4),
-          { id: "application", label: "Application" },
-          BASE_NAV_ITEMS[4]!
-        ]
-      : BASE_NAV_ITEMS;
+  const NAV_ITEMS = getNavItems(participantCount, isRegistered);
 
   return (
     <div className="min-w-0 space-y-8">
@@ -104,12 +102,14 @@ export default async function EventBySlugPage({ params }: { params: Promise<{ sl
               ) : null}
               <p className="mt-4 text-sm text-white/70 sm:text-base">{eventConfig.dateRange}</p>
               <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <Link
-                  href="#join"
-                  className="inline-flex min-h-[48px] items-center justify-center rounded-full bg-white px-6 py-3 font-semibold text-ink shadow-md transition hover:bg-white/90 active:scale-[0.98]"
-                >
-                  Join hackathon
-                </Link>
+                {!isRegistered ? (
+                  <Link
+                    href={`/events/${slug}/register`}
+                    className="inline-flex min-h-[48px] items-center justify-center rounded-full bg-white px-6 py-3 font-semibold text-ink shadow-md transition hover:bg-white/90 active:scale-[0.98]"
+                  >
+                    Join hackathon
+                  </Link>
+                ) : null}
                 <Link
                   href="/products"
                   className="inline-flex min-h-[48px] items-center justify-center rounded-full border border-white/40 px-6 py-3 font-semibold text-white transition hover:bg-white/10 active:scale-[0.98]"
@@ -256,16 +256,21 @@ export default async function EventBySlugPage({ params }: { params: Promise<{ sl
             {/* Panel 1: Participants */}
             <div className="space-y-6">
               <p className="text-black/70">
-                {totalRegistrations} registered · Find teammates or switch to the Register tab to join.
+                {totalRegistrations} registered · Find teammates or register via the button above to join.
               </p>
-              <ParticipantList
-                participants={participants.map((r) => ({
-                  userId: r.userId,
-                  userName: r.user?.name ?? "",
-                  username: r.user?.username ?? "",
+              <ParticipantsPanel
+                eventSlug={slug}
+                initialParticipants={participants.map((r) => ({
+                  userId: r.userId || r.id,
+                  userName: r.user?.name ?? r.userName ?? "",
+                  username: r.user?.username ?? r.userUsername ?? "",
+                  avatarUrl: r.user?.avatarUrl ?? r.userAvatarUrl ?? null,
+                  bio: r.user?.bio ?? r.userBio ?? null,
                   participationType: r.participationType,
                   teamName: r.teamName,
-                  projectName: r.projectName ?? ""
+                  projectName: r.projectName ?? "",
+                  skills: r.skills ?? [],
+                  teammatePreference: r.teammatePreference ?? null
                 }))}
                 currentUserId={currentUser?.id ?? null}
               />
@@ -323,7 +328,7 @@ export default async function EventBySlugPage({ params }: { params: Promise<{ sl
                   View full rules →
                 </a>
               ) : (
-                <p className="text-black/70">Register through the Register tab to participate. Team or individual—all builders welcome.</p>
+                <p className="text-black/70">Register via the event page to participate. Team or individual—all builders welcome.</p>
               )}
             </div>
 
@@ -346,34 +351,6 @@ export default async function EventBySlugPage({ params }: { params: Promise<{ sl
                 />
               </div>
             ) : null}
-
-            {/* Panel 5: Register (or Panel 4 when not registered) */}
-            <div className="card min-w-0 border-accent/30 bg-accentSoft/30 p-4 sm:p-6 md:p-8">
-              <p className="mb-6 text-black/75">Join the hackathon by creating an account and clicking Join hackathon.</p>
-              <JoinEventForm
-                eventSlug={slug}
-                eventTitle={eventConfig.title}
-                isLoggedIn={Boolean(currentUser)}
-                isRegistered={Boolean(registration)}
-                initialRegistration={
-                  registration
-                    ? {
-                        participationType: registration.participationType,
-                        teamName: registration.teamName,
-                        projectName:
-                          registration.projectName ||
-                          application?.sections?.companyName ||
-                          "",
-                        skills: registration.skills ?? [],
-                        bio: registration.bio ?? "",
-                        teammatePreference: registration.teammatePreference,
-                        referralSource: registration.referralSource
-                      }
-                    : null
-                }
-                currentUserUsername={currentUser?.username ?? null}
-              />
-            </div>
           </EventPageTabs>
         </div>
       </div>

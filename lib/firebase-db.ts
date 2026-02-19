@@ -1,3 +1,4 @@
+import { getLegacyCollectionName, getVersionedCollectionName, type DbCollectionKey } from "@/lib/db/schema";
 import { getFirestore } from "@/lib/firebase-admin";
 
 export type UserRecord = {
@@ -83,6 +84,14 @@ export type NotificationRecord = {
 /** Teammate preference from short registration form (Devpost-style). */
 export type TeammatePreference = "solo" | "looking" | "team";
 
+/** Snapshot of user display fields stored on the registration for single-query participant lists. */
+export type EventRegistrationUserSnapshot = {
+  userName: string;
+  userUsername: string;
+  userAvatarUrl: string | null;
+  userBio: string | null;
+};
+
 export type EventRegistrationRecord = {
   id: string;
   eventSlug: string;
@@ -100,6 +109,11 @@ export type EventRegistrationRecord = {
   rulesAgreed: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Denormalized from users for participant list (avoids N+1 reads). Optional for backward compatibility. */
+  userName?: string;
+  userUsername?: string;
+  userAvatarUrl?: string | null;
+  userBio?: string | null;
 };
 
 export type TeammatePostRecord = {
@@ -194,6 +208,20 @@ function asISOString(value: unknown): string {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function extractUserIdFromEventRegistrationDocId(docId: string, eventSlug: string): string {
+  if (!docId) return "";
+  const normalizedEventSlug = eventSlug.trim();
+  if (normalizedEventSlug) {
+    const prefix = `${normalizedEventSlug}_`;
+    if (docId.startsWith(prefix) && docId.length > prefix.length) {
+      return docId.slice(prefix.length);
+    }
+  }
+  const separator = docId.indexOf("_");
+  if (separator < 0 || separator >= docId.length - 1) return "";
+  return docId.slice(separator + 1);
 }
 
 function normalizeUser(id: string, data: Record<string, unknown>): UserRecord {
@@ -291,10 +319,13 @@ function normalizeNotification(id: string, data: Record<string, unknown>): Notif
 
 function normalizeEventRegistration(id: string, data: Record<string, unknown>): EventRegistrationRecord {
   const teammatePreference = data.teammatePreference as TeammatePreference | undefined;
+  const eventSlug = String(data.eventSlug ?? "");
+  const rawUserId = String(data.userId ?? "").trim();
+  const userId = rawUserId || extractUserIdFromEventRegistrationDocId(id, eventSlug);
   return {
     id,
-    eventSlug: String(data.eventSlug ?? ""),
-    userId: String(data.userId ?? ""),
+    eventSlug,
+    userId,
     participationType: (data.participationType as EventRegistrationRecord["participationType"]) ?? "INDIVIDUAL",
     teamName: data.teamName ? String(data.teamName) : null,
     projectName: String(data.projectName ?? ""),
@@ -305,7 +336,11 @@ function normalizeEventRegistration(id: string, data: Record<string, unknown>): 
     eligibilityAgreed: Boolean(data.eligibilityAgreed),
     rulesAgreed: Boolean(data.rulesAgreed),
     createdAt: asISOString(data.createdAt),
-    updatedAt: asISOString(data.updatedAt)
+    updatedAt: asISOString(data.updatedAt),
+    userName: data.userName != null ? String(data.userName) : undefined,
+    userUsername: data.userUsername != null ? String(data.userUsername) : undefined,
+    userAvatarUrl: data.userAvatarUrl != null ? (data.userAvatarUrl ? String(data.userAvatarUrl) : null) : undefined,
+    userBio: data.userBio != null ? (data.userBio ? String(data.userBio) : null) : undefined
   };
 }
 
@@ -357,70 +392,297 @@ function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
 }
 
+const ENABLE_LEGACY_READ_FALLBACK = process.env.FIRESTORE_LEGACY_READ_FALLBACK !== "0";
+const IN_QUERY_LIMIT = 30;
+
+function getPrimaryCollection(key: DbCollectionKey): FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData> {
+  return getFirestore().collection(getVersionedCollectionName(key));
+}
+
+function getLegacyCollection(key: DbCollectionKey): FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData> {
+  return getFirestore().collection(getLegacyCollectionName(key));
+}
+
+async function runQueryWithLegacyFallback(
+  key: DbCollectionKey,
+  buildQuery: (
+    collectionRef: FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData>
+  ) => FirebaseFirestore.Query<FirebaseFirestore.DocumentData>
+): Promise<FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>> {
+  const primary = await buildQuery(getPrimaryCollection(key)).get();
+  if (!primary.empty || !ENABLE_LEGACY_READ_FALLBACK) return primary;
+  return buildQuery(getLegacyCollection(key)).get();
+}
+
+async function getCountWithLegacyFallback(
+  key: DbCollectionKey,
+  buildQuery: (
+    collectionRef: FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData>
+  ) => FirebaseFirestore.Query<FirebaseFirestore.DocumentData>
+): Promise<number> {
+  const primaryCount = (await buildQuery(getPrimaryCollection(key)).count().get()).data().count;
+  if (primaryCount > 0 || !ENABLE_LEGACY_READ_FALLBACK) return primaryCount;
+  return (await buildQuery(getLegacyCollection(key)).count().get()).data().count;
+}
+
+async function getDocWithLegacyFallback(
+  key: DbCollectionKey,
+  docId: string
+): Promise<FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.DocumentData>> {
+  const primary = await getPrimaryCollection(key).doc(docId).get();
+  if (primary.exists || !ENABLE_LEGACY_READ_FALLBACK) return primary;
+  return getLegacyCollection(key).doc(docId).get();
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (items.length === 0) return [];
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+async function getDocsByIdsWithLegacyFallback(
+  key: DbCollectionKey,
+  ids: string[]
+): Promise<FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>[]> {
+  const uniqueIds = unique(ids.map((id) => id.trim()).filter(Boolean));
+  if (uniqueIds.length === 0) return [];
+
+  const docs: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>[] = [];
+  for (const batch of chunkArray(uniqueIds, IN_QUERY_LIMIT)) {
+    const primarySnap = await getPrimaryCollection(key).where("__name__", "in", batch).get();
+    docs.push(...primarySnap.docs);
+    if (!ENABLE_LEGACY_READ_FALLBACK) continue;
+
+    const foundIds = new Set(primarySnap.docs.map((doc) => doc.id));
+    const missingIds = batch.filter((id) => !foundIds.has(id));
+    if (missingIds.length === 0) continue;
+
+    const legacySnap = await getLegacyCollection(key).where("__name__", "in", missingIds).get();
+    docs.push(...legacySnap.docs);
+  }
+
+  return docs;
+}
+
+async function getUsersByIds(userIds: string[]): Promise<Map<string, UserRecord>> {
+  const docs = await getDocsByIdsWithLegacyFallback("users", userIds);
+  const users = new Map<string, UserRecord>();
+  for (const doc of docs) {
+    users.set(doc.id, normalizeUser(doc.id, doc.data()));
+  }
+  return users;
+}
+
+async function getProductsByIds(productIds: string[]): Promise<Map<string, ProductRecord>> {
+  const docs = await getDocsByIdsWithLegacyFallback("products", productIds);
+  const products = new Map<string, ProductRecord>();
+  for (const doc of docs) {
+    products.set(doc.id, normalizeProduct(doc.id, doc.data()));
+  }
+  return products;
+}
+
+async function getTopicsBySlugs(slugs: string[]): Promise<Map<string, TopicRecord>> {
+  const uniqueSlugs = unique(slugs.map((slug) => slug.trim()).filter(Boolean));
+  if (uniqueSlugs.length === 0) return new Map<string, TopicRecord>();
+
+  const topics = new Map<string, TopicRecord>();
+  for (const batch of chunkArray(uniqueSlugs, IN_QUERY_LIMIT)) {
+    const primarySnap = await getPrimaryCollection("topics").where("slug", "in", batch).get();
+    for (const doc of primarySnap.docs) {
+      const topic = normalizeTopic(doc.id, doc.data());
+      topics.set(topic.slug, topic);
+    }
+
+    if (!ENABLE_LEGACY_READ_FALLBACK) continue;
+    const foundSlugs = new Set(Array.from(topics.keys()));
+    const missingSlugs = batch.filter((slug) => !foundSlugs.has(slug));
+    if (missingSlugs.length === 0) continue;
+
+    const legacySnap = await getLegacyCollection("topics").where("slug", "in", missingSlugs).get();
+    for (const doc of legacySnap.docs) {
+      const topic = normalizeTopic(doc.id, doc.data());
+      topics.set(topic.slug, topic);
+    }
+  }
+
+  return topics;
+}
+
+function buildSnapshotUser(row: EventRegistrationRecord): UserRecord {
+  return {
+    id: row.userId,
+    email: "",
+    username: row.userUsername ?? "",
+    passwordHash: "",
+    name: row.userName ?? "",
+    bio: row.userBio ?? null,
+    avatarUrl: row.userAvatarUrl ?? null,
+    experience: null,
+    linkedInUrl: null,
+    xUrl: null,
+    githubUrl: null,
+    websiteUrl: null,
+    role: "USER",
+    createdAt: "",
+    updatedAt: ""
+  };
+}
+
+async function hydrateEventRegistrationUsers(rows: EventRegistrationRecord[]) {
+  const needsUserFetch = rows.filter((row) => row.userName == null || row.userUsername == null);
+  const userIdsToFetch = unique(needsUserFetch.map((row) => row.userId));
+  const usersById = await getUsersByIds(userIdsToFetch);
+
+  return rows.map((row) => {
+    if (row.userName != null && row.userUsername != null) {
+      return { ...row, user: buildSnapshotUser(row) };
+    }
+    return { ...row, user: usersById.get(row.userId) ?? null };
+  });
+}
+
+function isMissingCompositeIndexError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const maybeError = error as { code?: unknown; message?: unknown };
+  const message = typeof maybeError.message === "string" ? maybeError.message.toLowerCase() : "";
+  return maybeError.code === 9 || message.includes("requires an index");
+}
+
+async function queryEventRegistrationsByEventSlug(
+  collectionRef: FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData>,
+  eventSlug: string,
+  cursor: string | null,
+  limitCount: number
+): Promise<FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>[]> {
+  try {
+    let query = collectionRef.where("eventSlug", "==", eventSlug).orderBy("createdAt", "asc");
+    if (cursor) query = query.startAfter(cursor);
+    const snap = await query.limit(limitCount).get();
+    return snap.docs;
+  } catch (error) {
+    if (!isMissingCompositeIndexError(error)) throw error;
+    // Fallback path for environments where the composite index has not been deployed yet.
+    const scanSnap = await collectionRef.where("eventSlug", "==", eventSlug).limit(2000).get();
+    const sorted = [...scanSnap.docs].sort((a, b) => {
+      const aCreatedAt = asISOString((a.data() as Record<string, unknown>).createdAt);
+      const bCreatedAt = asISOString((b.data() as Record<string, unknown>).createdAt);
+      return aCreatedAt.localeCompare(bCreatedAt);
+    });
+    const filtered = cursor
+      ? sorted.filter((doc) => asISOString((doc.data() as Record<string, unknown>).createdAt) > cursor)
+      : sorted;
+    return filtered.slice(0, limitCount);
+  }
+}
+
+function mergeDocsById(
+  legacyDocs: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>[],
+  primaryDocs: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>[]
+): FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>[] {
+  const merged = new Map<string, FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>>();
+  for (const doc of legacyDocs) merged.set(doc.id, doc);
+  for (const doc of primaryDocs) merged.set(doc.id, doc);
+  return Array.from(merged.values());
+}
+
+async function getProductsByMakerIdWithFallback(
+  makerId: string
+): Promise<ProductRecord[]> {
+  try {
+    const snap = await runQueryWithLegacyFallback("products", (collectionRef) =>
+      collectionRef.where("makerId", "==", makerId).orderBy("createdAt", "desc")
+    );
+    return snap.docs.map((doc) => normalizeProduct(doc.id, doc.data()));
+  } catch (error) {
+    if (!isMissingCompositeIndexError(error)) throw error;
+    // Fallback when composite index is not deployed yet.
+    const [primarySnap, legacySnap] = await Promise.all([
+      getPrimaryCollection("products").where("makerId", "==", makerId).limit(300).get(),
+      ENABLE_LEGACY_READ_FALLBACK
+        ? getLegacyCollection("products").where("makerId", "==", makerId).limit(300).get()
+        : Promise.resolve(null)
+    ]);
+    const docs = mergeDocsById(legacySnap?.docs ?? [], primarySnap.docs).sort((a, b) => {
+      const aCreatedAt = asISOString((a.data() as Record<string, unknown>).createdAt);
+      const bCreatedAt = asISOString((b.data() as Record<string, unknown>).createdAt);
+      return bCreatedAt.localeCompare(aCreatedAt);
+    });
+    return docs.map((doc) => normalizeProduct(doc.id, doc.data()));
+  }
+}
+
 /** Lazy refs so Firebase is not initialized at module load (build can run without env). */
 const db = {
   get users() {
-    return getFirestore().collection("users");
+    return getPrimaryCollection("users");
   },
   get topics() {
-    return getFirestore().collection("topics");
+    return getPrimaryCollection("topics");
   },
   get products() {
-    return getFirestore().collection("products");
+    return getPrimaryCollection("products");
   },
   get launches() {
-    return getFirestore().collection("launches");
+    return getPrimaryCollection("launches");
   },
   get productMedia() {
-    return getFirestore().collection("productMedia");
+    return getPrimaryCollection("productMedia");
   },
   get upvotes() {
-    return getFirestore().collection("upvotes");
+    return getPrimaryCollection("upvotes");
   },
   get comments() {
-    return getFirestore().collection("comments");
+    return getPrimaryCollection("comments");
   },
   get follows() {
-    return getFirestore().collection("follows");
+    return getPrimaryCollection("follows");
   },
   get reports() {
-    return getFirestore().collection("reports");
+    return getPrimaryCollection("reports");
   },
   get notifications() {
-    return getFirestore().collection("notifications");
+    return getPrimaryCollection("notifications");
   },
   get collections() {
-    return getFirestore().collection("collections");
+    return getPrimaryCollection("collections");
   },
   get collectionItems() {
-    return getFirestore().collection("collectionItems");
+    return getPrimaryCollection("collectionItems");
   },
   get eventRegistrations() {
-    return getFirestore().collection("eventRegistrations");
+    return getPrimaryCollection("eventRegistrations");
   },
   get teammatePosts() {
-    return getFirestore().collection("teammatePosts");
+    return getPrimaryCollection("teammatePosts");
   },
   get eventApplications() {
-    return getFirestore().collection("eventApplications");
+    return getPrimaryCollection("eventApplications");
   }
 };
 
 export async function getUserById(userId: string): Promise<UserRecord | null> {
-  const snap = await db.users.doc(userId).get();
+  const snap = await getDocWithLegacyFallback("users", userId);
   if (!snap.exists) return null;
   return normalizeUser(snap.id, snap.data()!);
 }
 
 export async function getUserByEmail(email: string): Promise<UserRecord | null> {
-  const snap = await db.users.where("email", "==", email.toLowerCase()).limit(1).get();
+  const snap = await runQueryWithLegacyFallback("users", (collectionRef) =>
+    collectionRef.where("email", "==", email.toLowerCase()).limit(1)
+  );
   if (snap.empty) return null;
   const doc = snap.docs[0]!;
   return normalizeUser(doc.id, doc.data());
 }
 
 export async function getUserByUsername(username: string): Promise<UserRecord | null> {
-  const snap = await db.users.where("username", "==", username.toLowerCase()).limit(1).get();
+  const snap = await runQueryWithLegacyFallback("users", (collectionRef) =>
+    collectionRef.where("username", "==", username.toLowerCase()).limit(1)
+  );
   if (snap.empty) return null;
   const doc = snap.docs[0]!;
   return normalizeUser(doc.id, doc.data());
@@ -488,7 +750,9 @@ export async function updateUserProfile(userId: string, data: {
 }
 
 export async function createTopicIfMissing(name: string, slug: string): Promise<TopicRecord> {
-  const existing = await db.topics.where("slug", "==", slug).limit(1).get();
+  const existing = await runQueryWithLegacyFallback("topics", (collectionRef) =>
+    collectionRef.where("slug", "==", slug).limit(1)
+  );
   if (!existing.empty) {
     const doc = existing.docs[0]!;
     return normalizeTopic(doc.id, doc.data());
@@ -505,22 +769,19 @@ export async function createTopicIfMissing(name: string, slug: string): Promise<
 }
 
 export async function getTopicBySlugWithProducts(slug: string) {
-  const topicSnap = await db.topics.where("slug", "==", slug).limit(1).get();
+  const topicSnap = await runQueryWithLegacyFallback("topics", (collectionRef) =>
+    collectionRef.where("slug", "==", slug).limit(1)
+  );
   if (topicSnap.empty) return null;
   const topicDoc = topicSnap.docs[0]!;
   const topic = normalizeTopic(topicDoc.id, topicDoc.data());
 
-  const productSnap = await db.products.where("topicSlugs", "array-contains", slug).orderBy("createdAt", "desc").get();
-  const productRecords = productSnap.docs.map((d) => normalizeProduct(d.id, d.data()));
-
-  const makerIds: string[] = unique(productRecords.map((p) => p.makerId));
-  const makersMap = new Map<string, UserRecord>();
-  await Promise.all(
-    makerIds.map(async (id) => {
-      const maker = await getUserById(id);
-      if (maker) makersMap.set(id, maker);
-    })
+  const productSnap = await runQueryWithLegacyFallback("products", (collectionRef) =>
+    collectionRef.where("topicSlugs", "array-contains", slug).orderBy("createdAt", "desc")
   );
+  const productRecords = productSnap.docs.map((d) => normalizeProduct(d.id, d.data()));
+  const makerIds: string[] = unique(productRecords.map((p) => p.makerId));
+  const makersMap = await getUsersByIds(makerIds);
 
   return {
     topic,
@@ -532,7 +793,9 @@ export async function getTopicBySlugWithProducts(slug: string) {
 }
 
 export async function getCollectionBySlug(slug: string) {
-  const collectionSnap = await db.collections.where("slug", "==", slug).limit(1).get();
+  const collectionSnap = await runQueryWithLegacyFallback("collections", (collectionRef) =>
+    collectionRef.where("slug", "==", slug).limit(1)
+  );
   if (collectionSnap.empty) return null;
   const collectionDoc = collectionSnap.docs[0]!;
   const raw = collectionDoc.data() as Record<string, unknown>;
@@ -545,92 +808,93 @@ export async function getCollectionBySlug(slug: string) {
     createdAt: asISOString(raw.createdAt)
   };
 
-  const itemSnap = await db.collectionItems
-    .where("collectionId", "==", collectionDoc.id)
-    .orderBy("position", "asc")
-    .get();
-
-  const items = await Promise.all(
-    itemSnap.docs.map(async (doc) => {
-      const data = doc.data();
-      const productId = String(data.productId ?? "");
-      const product = await getProductById(productId);
-      return {
-        id: doc.id,
-        note: data.note ? String(data.note) : null,
-        position: Number(data.position ?? 0),
-        product
-      };
-    })
+  const itemSnap = await runQueryWithLegacyFallback("collectionItems", (collectionRef) =>
+    collectionRef.where("collectionId", "==", collectionDoc.id).orderBy("position", "asc")
   );
+
+  const itemsRaw = itemSnap.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      productId: String(data.productId ?? ""),
+      note: data.note ? String(data.note) : null,
+      position: Number(data.position ?? 0)
+    };
+  });
+  const productsById = await getProductsByIds(itemsRaw.map((item) => item.productId));
+  const items = itemsRaw
+    .map((item) => ({
+      id: item.id,
+      note: item.note,
+      position: item.position,
+      product: productsById.get(item.productId) ?? null
+    }))
+    .filter((item) => item.product !== null);
 
   const creator = await getUserById(collection.creatorId);
   return {
     ...collection,
     creator,
-    items: items.filter((item) => item.product)
+    items
   };
 }
 
 export async function getProductById(productId: string): Promise<ProductRecord | null> {
-  const snap = await db.products.doc(productId).get();
+  const snap = await getDocWithLegacyFallback("products", productId);
   if (!snap.exists) return null;
   return normalizeProduct(snap.id, snap.data()!);
 }
 
 export async function getProductBySlug(slug: string): Promise<ProductRecord | null> {
-  const snap = await db.products.where("slug", "==", slug).limit(1).get();
+  const snap = await runQueryWithLegacyFallback("products", (collectionRef) =>
+    collectionRef.where("slug", "==", slug).limit(1)
+  );
   if (snap.empty) return null;
   const doc = snap.docs[0]!;
   return normalizeProduct(doc.id, doc.data());
 }
 
 export async function getProductMedia(productId: string): Promise<ProductMediaRecord[]> {
-  const snap = await db.productMedia.where("productId", "==", productId).orderBy("createdAt", "asc").get();
+  const snap = await runQueryWithLegacyFallback("productMedia", (collectionRef) =>
+    collectionRef.where("productId", "==", productId).orderBy("createdAt", "asc")
+  );
   return snap.docs.map((d) => normalizeMedia(d.id, d.data()));
 }
 
 export async function getLatestLiveLaunchForProduct(productId: string): Promise<LaunchRecord | null> {
-  const snap = await db.launches
-    .where("productId", "==", productId)
-    .where("status", "==", "LIVE")
-    .orderBy("launchDate", "desc")
-    .limit(1)
-    .get();
+  const snap = await runQueryWithLegacyFallback("launches", (collectionRef) =>
+    collectionRef.where("productId", "==", productId).where("status", "==", "LIVE").orderBy("launchDate", "desc").limit(1)
+  );
   if (snap.empty) return null;
   const doc = snap.docs[0]!;
   return normalizeLaunch(doc.id, doc.data());
 }
 
 export async function getLaunchById(launchId: string): Promise<LaunchRecord | null> {
-  const snap = await db.launches.doc(launchId).get();
+  const snap = await getDocWithLegacyFallback("launches", launchId);
   if (!snap.exists) return null;
   return normalizeLaunch(snap.id, snap.data()!);
 }
 
 export async function getLaunchCounts(launchId: string): Promise<{ upvotes: number; comments: number }> {
-  const [upvoteSnap, commentSnap] = await Promise.all([
-    db.upvotes.where("launchId", "==", launchId).count().get(),
-    db.comments.where("launchId", "==", launchId).count().get()
+  const [upvotes, comments] = await Promise.all([
+    getCountWithLegacyFallback("upvotes", (collectionRef) => collectionRef.where("launchId", "==", launchId)),
+    getCountWithLegacyFallback("comments", (collectionRef) => collectionRef.where("launchId", "==", launchId))
   ]);
 
   return {
-    upvotes: upvoteSnap.data().count,
-    comments: commentSnap.data().count
+    upvotes,
+    comments
   };
 }
 
 export async function getLaunchCommentsTree(launchId: string) {
-  const snap = await db.comments.where("launchId", "==", launchId).orderBy("createdAt", "desc").get();
+  const snap = await runQueryWithLegacyFallback("comments", (collectionRef) =>
+    collectionRef.where("launchId", "==", launchId).orderBy("createdAt", "desc")
+  );
   const all = snap.docs.map((d) => normalizeComment(d.id, d.data()));
   const usersNeeded: string[] = unique(all.map((c) => c.userId));
-  const usersMap = new Map<string, UserRecord>();
-  await Promise.all(
-    usersNeeded.map(async (id) => {
-      const user = await getUserById(id);
-      if (user) usersMap.set(id, user);
-    })
-  );
+  const usersMap = await getUsersByIds(usersNeeded);
 
   const repliesByParent = new Map<string, CommentRecord[]>();
   for (const comment of all) {
@@ -683,8 +947,7 @@ export async function upvoteLaunch(launchId: string, userId: string): Promise<nu
     });
   }
 
-  const countSnap = await db.upvotes.where("launchId", "==", launchId).count().get();
-  return countSnap.data().count;
+  return getCountWithLegacyFallback("upvotes", (collectionRef) => collectionRef.where("launchId", "==", launchId));
 }
 
 export async function followUser(followerId: string, followeeId: string): Promise<number> {
@@ -699,8 +962,7 @@ export async function followUser(followerId: string, followeeId: string): Promis
     });
   }
 
-  const countSnap = await db.follows.where("followeeId", "==", followeeId).count().get();
-  return countSnap.data().count;
+  return getCountWithLegacyFallback("follows", (collectionRef) => collectionRef.where("followeeId", "==", followeeId));
 }
 
 export async function createReport(data: {
@@ -722,7 +984,9 @@ export async function createReport(data: {
 }
 
 export async function getNotificationsForUser(userId: string): Promise<NotificationRecord[]> {
-  const snap = await db.notifications.where("userId", "==", userId).orderBy("createdAt", "desc").limit(30).get();
+  const snap = await runQueryWithLegacyFallback("notifications", (collectionRef) =>
+    collectionRef.where("userId", "==", userId).orderBy("createdAt", "desc").limit(30)
+  );
   return snap.docs.map((d) => normalizeNotification(d.id, d.data()));
 }
 
@@ -796,17 +1060,13 @@ export async function createProductWithLaunch(data: {
 }
 
 export async function getFeedLaunches(topicSlug?: string) {
-  const launchSnap = await db.launches.where("status", "==", "LIVE").orderBy("launchDate", "desc").limit(30).get();
+  const launchSnap = await runQueryWithLegacyFallback("launches", (collectionRef) =>
+    collectionRef.where("status", "==", "LIVE").orderBy("launchDate", "desc").limit(30)
+  );
   const launchRecords = launchSnap.docs.map((d) => normalizeLaunch(d.id, d.data()));
 
   const productIds: string[] = unique(launchRecords.map((l) => l.productId));
-  const productMap = new Map<string, ProductRecord>();
-  await Promise.all(
-    productIds.map(async (productId) => {
-      const product = await getProductById(productId);
-      if (product) productMap.set(productId, product);
-    })
-  );
+  const productMap = await getProductsByIds(productIds);
 
   const filteredLaunches = launchRecords.filter((launch) => {
     if (!topicSlug) return true;
@@ -820,34 +1080,26 @@ export async function getFeedLaunches(topicSlug?: string) {
       .filter((v): v is string => Boolean(v))
   );
 
-  const makers = new Map<string, UserRecord>();
-  await Promise.all(
-    makerIds.map(async (id) => {
-      const user = await getUserById(id);
-      if (user) makers.set(id, user);
-    })
-  );
+  const makers = await getUsersByIds(makerIds);
 
   return Promise.all(
     filteredLaunches.map(async (launch) => {
       const product = productMap.get(launch.productId);
       if (!product) return null;
-      const [counts, topicDocs] = await Promise.all([
+      const [counts, topicsBySlug] = await Promise.all([
         getLaunchCounts(launch.id),
-        Promise.all(product.topicSlugs.map(async (slug) => {
-          const snap = await db.topics.where("slug", "==", slug).limit(1).get();
-          if (snap.empty) return null;
-          const d = snap.docs[0]!;
-          return normalizeTopic(d.id, d.data());
-        }))
+        getTopicsBySlugs(product.topicSlugs)
       ]);
+      const topicDocs = product.topicSlugs
+        .map((slug) => topicsBySlug.get(slug))
+        .filter((topic): topic is TopicRecord => Boolean(topic));
 
       return {
         ...launch,
         product: {
           ...product,
           maker: makers.get(product.makerId) ?? null,
-          topics: topicDocs.filter((t): t is TopicRecord => Boolean(t))
+          topics: topicDocs
         },
         _count: counts
       };
@@ -865,21 +1117,17 @@ export async function getProductPageBySlug(slug: string) {
     getLatestLiveLaunchForProduct(product.id)
   ]);
 
-  const topicDocs = await Promise.all(
-    product.topicSlugs.map(async (topicSlug) => {
-      const snap = await db.topics.where("slug", "==", topicSlug).limit(1).get();
-      if (snap.empty) return null;
-      const d = snap.docs[0]!;
-      return normalizeTopic(d.id, d.data());
-    })
-  );
+  const topicsBySlug = await getTopicsBySlugs(product.topicSlugs);
+  const topicDocs = product.topicSlugs
+    .map((topicSlug) => topicsBySlug.get(topicSlug))
+    .filter((topic): topic is TopicRecord => Boolean(topic));
 
   if (!launch) {
     return {
       product,
       maker,
       media,
-      topics: topicDocs.filter((t): t is TopicRecord => Boolean(t)),
+      topics: topicDocs,
       launch: null,
       comments: [] as Awaited<ReturnType<typeof getLaunchCommentsTree>>
     };
@@ -891,7 +1139,7 @@ export async function getProductPageBySlug(slug: string) {
     product,
     maker,
     media,
-    topics: topicDocs.filter((t): t is TopicRecord => Boolean(t)),
+    topics: topicDocs,
     launch: {
       ...launch,
       _count: counts
@@ -903,9 +1151,9 @@ export async function getProductPageBySlug(slug: string) {
 export async function searchAll(query: string) {
   const q = query.toLowerCase();
   const [productSnap, userSnap, topicSnap] = await Promise.all([
-    db.products.orderBy("createdAt", "desc").limit(120).get(),
-    db.users.limit(120).get(),
-    db.topics.limit(120).get()
+    runQueryWithLegacyFallback("products", (collectionRef) => collectionRef.orderBy("createdAt", "desc").limit(120)),
+    runQueryWithLegacyFallback("users", (collectionRef) => collectionRef.limit(120)),
+    runQueryWithLegacyFallback("topics", (collectionRef) => collectionRef.limit(120))
   ]);
 
   const productRows = productSnap.docs
@@ -917,13 +1165,7 @@ export async function searchAll(query: string) {
     .slice(0, 20);
 
   const makerIds: string[] = unique(productRows.map((p) => p.makerId));
-  const makersMap = new Map<string, UserRecord>();
-  await Promise.all(
-    makerIds.map(async (id) => {
-      const maker = await getUserById(id);
-      if (maker) makersMap.set(id, maker);
-    })
-  );
+  const makersMap = await getUsersByIds(makerIds);
 
   const userRows = userSnap.docs
     .map((d) => normalizeUser(d.id, d.data()))
@@ -946,26 +1188,27 @@ export async function getMakerProfile(username: string) {
   const maker = await getUserByUsername(username);
   if (!maker) return null;
 
-  const productsSnap = await db.products.where("makerId", "==", maker.id).orderBy("createdAt", "desc").get();
-  const productRows = productsSnap.docs.map((d) => normalizeProduct(d.id, d.data()));
+  const productRows = await getProductsByMakerIdWithFallback(maker.id);
 
-  const [followersSnap, followingSnap] = await Promise.all([
-    db.follows.where("followeeId", "==", maker.id).count().get(),
-    db.follows.where("followerId", "==", maker.id).count().get()
+  const [followersCount, followingCount] = await Promise.all([
+    getCountWithLegacyFallback("follows", (collectionRef) => collectionRef.where("followeeId", "==", maker.id)),
+    getCountWithLegacyFallback("follows", (collectionRef) => collectionRef.where("followerId", "==", maker.id))
   ]);
 
   return {
     user: maker,
     products: productRows,
     counts: {
-      followers: followersSnap.data().count,
-      following: followingSnap.data().count
+      followers: followersCount,
+      following: followingCount
     }
   };
 }
 
 export async function getUpcomingLaunches() {
-  const snap = await db.launches.where("status", "==", "SCHEDULED").orderBy("launchDate", "asc").get();
+  const snap = await runQueryWithLegacyFallback("launches", (collectionRef) =>
+    collectionRef.where("status", "==", "SCHEDULED").orderBy("launchDate", "asc")
+  );
   const rows = snap.docs.map((d) => normalizeLaunch(d.id, d.data()));
   return Promise.all(
     rows.map(async (launch) => ({
@@ -976,7 +1219,9 @@ export async function getUpcomingLaunches() {
 }
 
 export async function getAllProductsWithCounts() {
-  const snap = await db.products.orderBy("createdAt", "desc").limit(150).get();
+  const snap = await runQueryWithLegacyFallback("products", (collectionRef) =>
+    collectionRef.orderBy("createdAt", "desc").limit(150)
+  );
   const rows = snap.docs.map((d) => normalizeProduct(d.id, d.data()));
 
   return Promise.all(
@@ -989,8 +1234,7 @@ export async function getAllProductsWithCounts() {
 }
 
 export async function getProductsForMaker(makerId: string) {
-  const snap = await db.products.where("makerId", "==", makerId).orderBy("createdAt", "desc").get();
-  const rows = snap.docs.map((d) => normalizeProduct(d.id, d.data()));
+  const rows = await getProductsByMakerIdWithFallback(makerId);
   return Promise.all(
     rows.map(async (product) => {
       const [launch, media] = await Promise.all([getLatestLiveLaunchForProduct(product.id), getProductMedia(product.id)]);
@@ -1006,36 +1250,58 @@ export async function findProductBySlug(slug: string): Promise<ProductRecord | n
 
 export async function getEventRegistrationByUser(eventSlug: string, userId: string): Promise<EventRegistrationRecord | null> {
   const docId = `${eventSlug}_${userId}`;
-  const snap = await db.eventRegistrations.doc(docId).get();
+  const snap = await getDocWithLegacyFallback("eventRegistrations", docId);
   if (!snap.exists) return null;
   return normalizeEventRegistration(snap.id, snap.data()!);
 }
 
 /** List all registrations for an event with user name/username for the participant list. */
 export async function getEventRegistrations(eventSlug: string, limitCount = 200) {
-  const snap = await db.eventRegistrations
-    .where("eventSlug", "==", eventSlug)
-    .orderBy("createdAt", "asc")
-    .limit(limitCount)
-    .get();
-  const rows = snap.docs
+  const { rows } = await getEventRegistrationsPage(eventSlug, { limitCount });
+  return rows;
+}
+
+export async function getEventRegistrationsPage(
+  eventSlug: string,
+  options?: { limitCount?: number; cursor?: string | null }
+) {
+  const safeLimit = Math.max(1, Math.min(options?.limitCount ?? 200, 200));
+  const cursor = options?.cursor?.trim() || null;
+  const fetchLimit = safeLimit + 1;
+  const primaryDocsPromise = queryEventRegistrationsByEventSlug(
+    getPrimaryCollection("eventRegistrations"),
+    eventSlug,
+    cursor,
+    fetchLimit
+  );
+  const legacyDocsPromise = ENABLE_LEGACY_READ_FALLBACK
+    ? queryEventRegistrationsByEventSlug(getLegacyCollection("eventRegistrations"), eventSlug, cursor, fetchLimit)
+    : Promise.resolve([] as FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>[]);
+  const [primaryDocs, legacyDocs] = await Promise.all([primaryDocsPromise, legacyDocsPromise]);
+
+  const mergedDocs = mergeDocsById(legacyDocs, primaryDocs).sort((a, b) => {
+    const aCreatedAt = asISOString((a.data() as Record<string, unknown>).createdAt);
+    const bCreatedAt = asISOString((b.data() as Record<string, unknown>).createdAt);
+    return aCreatedAt.localeCompare(bCreatedAt);
+  });
+  const hasMore = mergedDocs.length > safeLimit;
+  const pageDocs = hasMore ? mergedDocs.slice(0, safeLimit) : mergedDocs;
+  const rows = pageDocs
     .map((doc) => {
       const data = doc.data();
       return data ? normalizeEventRegistration(doc.id, data) : null;
     })
-    .filter((r): r is EventRegistrationRecord => r !== null);
-  const userIds: string[] = unique(rows.map((r) => r.userId));
-  const usersMap = new Map<string, UserRecord>();
-  await Promise.all(
-    userIds.map(async (id) => {
-      const user = await getUserById(id);
-      if (user) usersMap.set(id, user);
-    })
-  );
-  return rows.map((row) => ({
-    ...row,
-    user: usersMap.get(row.userId) ?? null
-  }));
+    .filter((row): row is EventRegistrationRecord => row !== null);
+  const hydratedRows = await hydrateEventRegistrationUsers(rows);
+  const nextCursor = hasMore && hydratedRows.length > 0
+    ? hydratedRows[hydratedRows.length - 1]!.createdAt
+    : null;
+
+  return {
+    rows: hydratedRows,
+    hasMore,
+    nextCursor
+  };
 }
 
 export async function upsertEventRegistration(data: {
@@ -1050,41 +1316,78 @@ export async function upsertEventRegistration(data: {
   referralSource?: string | null;
   eligibilityAgreed?: boolean;
   rulesAgreed?: boolean;
+  /** Snapshot of user display fields for participant list (avoids N+1 reads). */
+  userSnapshot?: EventRegistrationUserSnapshot;
 }) {
   const docId = `${data.eventSlug}_${data.userId}`;
   const now = nowIso();
   const ref = db.eventRegistrations.doc(docId);
-  const existing = await ref.get();
-  const existingData = existing.exists ? existing.data() : null;
+  const primaryExisting = await ref.get();
+  const fallbackExisting = !primaryExisting.exists && ENABLE_LEGACY_READ_FALLBACK
+    ? await getLegacyCollection("eventRegistrations").doc(docId).get()
+    : null;
+  const existingData = primaryExisting.exists
+    ? primaryExisting.data()
+    : fallbackExisting?.exists
+      ? fallbackExisting.data()
+      : null;
+  const hasExistingRecord = existingData != null;
   const participationType =
     data.participationType ??
     (data.teammatePreference === "team" ? "TEAM" : "INDIVIDUAL") as "TEAM" | "INDIVIDUAL";
 
-  await ref.set(
-    {
-      eventSlug: data.eventSlug,
-      userId: data.userId,
-      participationType,
-      teamName: data.teamName ?? (existingData?.teamName ?? null),
-      projectName: data.projectName ?? existingData?.projectName ?? "",
-      skills: data.skills ?? existingData?.skills ?? [],
-      bio: data.bio ?? existingData?.bio ?? "",
-      teammatePreference: data.teammatePreference ?? existingData?.teammatePreference ?? null,
-      referralSource: data.referralSource ?? existingData?.referralSource ?? null,
-      eligibilityAgreed: data.eligibilityAgreed ?? existingData?.eligibilityAgreed ?? false,
-      rulesAgreed: data.rulesAgreed ?? existingData?.rulesAgreed ?? false,
-      createdAt: existing.exists ? existingData?.createdAt ?? now : now,
-      updatedAt: now
-    },
-    { merge: true }
-  );
+  const payload: Record<string, unknown> = {
+    eventSlug: data.eventSlug,
+    userId: data.userId,
+    participationType,
+    teamName: data.teamName ?? (existingData?.teamName ?? null),
+    projectName: data.projectName ?? existingData?.projectName ?? "",
+    skills: data.skills ?? existingData?.skills ?? [],
+    bio: data.bio ?? existingData?.bio ?? "",
+    teammatePreference: data.teammatePreference ?? existingData?.teammatePreference ?? null,
+    referralSource: data.referralSource ?? existingData?.referralSource ?? null,
+    eligibilityAgreed: data.eligibilityAgreed ?? existingData?.eligibilityAgreed ?? false,
+    rulesAgreed: data.rulesAgreed ?? existingData?.rulesAgreed ?? false,
+    createdAt: hasExistingRecord ? existingData?.createdAt ?? now : now,
+    updatedAt: now
+  };
+
+  if (data.userSnapshot) {
+    payload.userName = data.userSnapshot.userName;
+    payload.userUsername = data.userSnapshot.userUsername;
+    payload.userAvatarUrl = data.userSnapshot.userAvatarUrl ?? null;
+    payload.userBio = data.userSnapshot.userBio ?? null;
+  }
+
+  await ref.set(payload, { merge: true });
 
   return (await ref.get()).data();
 }
 
+/** Update user display snapshot on all event registrations for this user (e.g. after profile update). */
+export async function updateEventRegistrationsUserSnapshot(
+  userId: string,
+  snapshot: EventRegistrationUserSnapshot
+): Promise<void> {
+  const snap = await runQueryWithLegacyFallback("eventRegistrations", (collectionRef) =>
+    collectionRef.where("userId", "==", userId)
+  );
+  const batch = getFirestore().batch();
+  for (const doc of snap.docs) {
+    batch.update(doc.ref, {
+      userName: snapshot.userName,
+      userUsername: snapshot.userUsername,
+      userAvatarUrl: snapshot.userAvatarUrl ?? null,
+      userBio: snapshot.userBio ?? null,
+      updatedAt: nowIso()
+    });
+  }
+  if (snap.docs.length > 0) await batch.commit();
+}
+
 export async function getEventApplicationByUser(eventSlug: string, userId: string): Promise<EventApplicationRecord | null> {
   const docId = `${eventSlug}_${userId}`;
-  const snap = await db.eventApplications.doc(docId).get();
+  const snap = await getDocWithLegacyFallback("eventApplications", docId);
   if (!snap.exists) return null;
   return normalizeEventApplication(snap.id, snap.data()!);
 }
@@ -1140,7 +1443,7 @@ export async function upsertEventApplicationDraft(data: {
 
 export async function submitEventApplication(eventSlug: string, userId: string): Promise<{ ok: true } | { error: string }> {
   const docId = `${eventSlug}_${userId}`;
-  const snap = await db.eventApplications.doc(docId).get();
+  const snap = await getDocWithLegacyFallback("eventApplications", docId);
   if (!snap.exists) {
     return { error: "Application not found. Save a draft first." };
   }
@@ -1266,7 +1569,9 @@ export async function updateTeammatePost(
 }
 
 export async function getTeammatePosts(eventSlug: string, limitCount = 30) {
-  const snap = await db.teammatePosts.where("eventSlug", "==", eventSlug).orderBy("createdAt", "desc").limit(limitCount).get();
+  const snap = await runQueryWithLegacyFallback("teammatePosts", (collectionRef) =>
+    collectionRef.where("eventSlug", "==", eventSlug).orderBy("createdAt", "desc").limit(limitCount)
+  );
   const rows = snap.docs
     .map((doc) => {
       const data = doc.data();
@@ -1274,14 +1579,7 @@ export async function getTeammatePosts(eventSlug: string, limitCount = 30) {
     })
     .filter((row): row is TeammatePostRecord => row !== null);
   const userIds: string[] = unique(rows.map((row) => row.userId));
-  const usersMap = new Map<string, UserRecord>();
-
-  await Promise.all(
-    userIds.map(async (id) => {
-      const user = await getUserById(id);
-      if (user) usersMap.set(id, user);
-    })
-  );
+  const usersMap = await getUsersByIds(userIds);
 
   return rows.map((row) => ({
     ...row,
@@ -1290,40 +1588,50 @@ export async function getTeammatePosts(eventSlug: string, limitCount = 30) {
 }
 
 export async function getEventStats(eventSlug: string) {
-  const [registrationsSnap, teammatesSnap, teamSnap, individualSnap] = await Promise.all([
-    db.eventRegistrations.where("eventSlug", "==", eventSlug).count().get(),
-    db.teammatePosts.where("eventSlug", "==", eventSlug).count().get(),
-    db.eventRegistrations.where("eventSlug", "==", eventSlug).where("participationType", "==", "TEAM").count().get(),
-    db.eventRegistrations.where("eventSlug", "==", eventSlug).where("participationType", "==", "INDIVIDUAL").count().get()
+  const [primaryRegistrations, legacyRegistrations, primaryTeammatePosts, legacyTeammatePosts] = await Promise.all([
+    getPrimaryCollection("eventRegistrations").where("eventSlug", "==", eventSlug).limit(5000).get(),
+    ENABLE_LEGACY_READ_FALLBACK
+      ? getLegacyCollection("eventRegistrations").where("eventSlug", "==", eventSlug).limit(5000).get()
+      : Promise.resolve(null),
+    getPrimaryCollection("teammatePosts").where("eventSlug", "==", eventSlug).limit(5000).get(),
+    ENABLE_LEGACY_READ_FALLBACK
+      ? getLegacyCollection("teammatePosts").where("eventSlug", "==", eventSlug).limit(5000).get()
+      : Promise.resolve(null)
   ]);
 
+  const registrationDocs = mergeDocsById(legacyRegistrations?.docs ?? [], primaryRegistrations.docs);
+  const teammatePostDocs = mergeDocsById(legacyTeammatePosts?.docs ?? [], primaryTeammatePosts.docs);
+  const registrationRows = registrationDocs.map((doc) => normalizeEventRegistration(doc.id, doc.data()));
+  const teams = registrationRows.filter((row) => row.participationType === "TEAM").length;
+  const individuals = registrationRows.filter((row) => row.participationType === "INDIVIDUAL").length;
+
   return {
-    registrations: registrationsSnap.data().count,
-    teammatePosts: teammatesSnap.data().count,
-    teams: teamSnap.data().count,
-    individuals: individualSnap.data().count
+    registrations: registrationRows.length,
+    teammatePosts: teammatePostDocs.length,
+    teams,
+    individuals
   };
 }
 
 export async function getAdminOverview() {
-  const [usersCount, productsCount, launchesCount, commentsCount, upvotesCount, registrationsCount, teammatePostsCount] =
+  const [users, products, launches, comments, upvotes, eventRegistrations, teammatePosts] =
     await Promise.all([
-      db.users.count().get(),
-      db.products.count().get(),
-      db.launches.count().get(),
-      db.comments.count().get(),
-      db.upvotes.count().get(),
-      db.eventRegistrations.count().get(),
-      db.teammatePosts.count().get()
+      getCountWithLegacyFallback("users", (collectionRef) => collectionRef),
+      getCountWithLegacyFallback("products", (collectionRef) => collectionRef),
+      getCountWithLegacyFallback("launches", (collectionRef) => collectionRef),
+      getCountWithLegacyFallback("comments", (collectionRef) => collectionRef),
+      getCountWithLegacyFallback("upvotes", (collectionRef) => collectionRef),
+      getCountWithLegacyFallback("eventRegistrations", (collectionRef) => collectionRef),
+      getCountWithLegacyFallback("teammatePosts", (collectionRef) => collectionRef)
     ]);
 
   return {
-    users: usersCount.data().count,
-    products: productsCount.data().count,
-    launches: launchesCount.data().count,
-    comments: commentsCount.data().count,
-    upvotes: upvotesCount.data().count,
-    eventRegistrations: registrationsCount.data().count,
-    teammatePosts: teammatePostsCount.data().count
+    users,
+    products,
+    launches,
+    comments,
+    upvotes,
+    eventRegistrations,
+    teammatePosts
   };
 }

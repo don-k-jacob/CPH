@@ -16,7 +16,11 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "db:seed": "tsx scripts/seed-firebase.ts"
+    "db:seed": "tsx scripts/seed-firebase.ts",
+    "db:schema:status": "tsx scripts/db/schema-status.ts",
+    "db:migrate:v1": "tsx scripts/db/migrate-schema-v1.ts",
+    "db:reset:versioned": "tsx scripts/db/reset-versioned-schema.ts",
+    "db:reset:legacy": "tsx scripts/db/reset-legacy-schema.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

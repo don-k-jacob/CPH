@@ -1,7 +1,29 @@
 import { randomBytes, scryptSync } from "node:crypto";
 import { loadEnvConfig } from "@next/env";
+import {
+  FIRESTORE_SCHEMA_NAMESPACE,
+  FIRESTORE_SCHEMA_VERSION,
+  SCHEMA_META_COLLECTION,
+  SCHEMA_META_DOC_ID,
+  getVersionedCollectionName
+} from "../lib/db/schema";
 
 let firestore: any;
+
+const collectionNames = {
+  users: getVersionedCollectionName("users"),
+  topics: getVersionedCollectionName("topics"),
+  products: getVersionedCollectionName("products"),
+  launches: getVersionedCollectionName("launches"),
+  productMedia: getVersionedCollectionName("productMedia"),
+  upvotes: getVersionedCollectionName("upvotes"),
+  comments: getVersionedCollectionName("comments"),
+  collections: getVersionedCollectionName("collections"),
+  collectionItems: getVersionedCollectionName("collectionItems"),
+  notifications: getVersionedCollectionName("notifications"),
+  eventRegistrations: getVersionedCollectionName("eventRegistrations"),
+  teammatePosts: getVersionedCollectionName("teammatePosts")
+} as const;
 
 function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
@@ -39,7 +61,7 @@ async function main() {
   firestore = getFirestore();
   const now = new Date().toISOString();
 
-  const makerId = await upsertByField("users", "email", "maker@cph.dev", {
+  const makerId = await upsertByField(collectionNames.users, "email", "maker@cph.dev", {
     email: "maker@cph.dev",
     username: "maker_maria",
     passwordHash: hashPassword("password123"),
@@ -51,7 +73,7 @@ async function main() {
     updatedAt: now
   });
 
-  const hunterId = await upsertByField("users", "email", "hunter@cph.dev", {
+  const hunterId = await upsertByField(collectionNames.users, "email", "hunter@cph.dev", {
     email: "hunter@cph.dev",
     username: "hunter_paul",
     passwordHash: hashPassword("password123"),
@@ -65,7 +87,7 @@ async function main() {
 
   const topics = ["AI", "Developer Tools", "Productivity", "Education", "No-Code"];
   for (const topic of topics) {
-    await upsertByField("topics", "slug", slugify(topic), {
+    await upsertByField(collectionNames.topics, "slug", slugify(topic), {
       name: topic,
       slug: slugify(topic),
       description: null,
@@ -74,7 +96,7 @@ async function main() {
   }
 
   const productSlug = "launch-liturgy";
-  const productId = await upsertByField("products", "slug", productSlug, {
+  const productId = await upsertByField(collectionNames.products, "slug", productSlug, {
     name: "Launch Liturgy",
     slug: productSlug,
     tagline: "Plan, announce, and grow your launch with a single ritualized workflow.",
@@ -89,7 +111,7 @@ async function main() {
     updatedAt: now
   });
 
-  await upsertByField("launches", "productId", productId, {
+  await upsertByField(collectionNames.launches, "productId", productId, {
     productId,
     hunterId,
     launchDate: now,
@@ -99,16 +121,16 @@ async function main() {
     createdAt: now
   });
 
-  const mediaSnap = await firestore.collection("productMedia").where("productId", "==", productId).get();
+  const mediaSnap = await firestore.collection(collectionNames.productMedia).where("productId", "==", productId).get();
   if (mediaSnap.empty) {
-    await firestore.collection("productMedia").add({
+    await firestore.collection(collectionNames.productMedia).add({
       productId,
       type: "IMAGE",
       url: "https://picsum.photos/seed/cph1/900/600",
       createdAt: now
     });
 
-    await firestore.collection("productMedia").add({
+    await firestore.collection(collectionNames.productMedia).add({
       productId,
       type: "VIDEO",
       url: "https://samplelib.com/lib/preview/mp4/sample-5s.mp4",
@@ -116,11 +138,11 @@ async function main() {
     });
   }
 
-  const launchSnap = await firestore.collection("launches").where("productId", "==", productId).limit(1).get();
+  const launchSnap = await firestore.collection(collectionNames.launches).where("productId", "==", productId).limit(1).get();
   const launchId = launchSnap.docs[0]?.id;
 
   if (launchId) {
-    await firestore.collection("upvotes").doc(`${makerId}_${launchId}`).set(
+    await firestore.collection(collectionNames.upvotes).doc(`${makerId}_${launchId}`).set(
       {
         userId: makerId,
         launchId,
@@ -129,9 +151,9 @@ async function main() {
       { merge: true }
     );
 
-    const existingComment = await firestore.collection("comments").where("launchId", "==", launchId).limit(1).get();
+    const existingComment = await firestore.collection(collectionNames.comments).where("launchId", "==", launchId).limit(1).get();
     if (existingComment.empty) {
-      await firestore.collection("comments").add({
+      await firestore.collection(collectionNames.comments).add({
         launchId,
         userId: hunterId,
         body: "Excited to hunt this today. The onboarding flow is excellent.",
@@ -141,7 +163,7 @@ async function main() {
     }
   }
 
-  const collectionId = await upsertByField("collections", "slug", "launch-starters", {
+  const collectionId = await upsertByField(collectionNames.collections, "slug", "launch-starters", {
     name: "Launch Starters",
     slug: "launch-starters",
     description: "Tools for planning and executing a launch week.",
@@ -149,7 +171,7 @@ async function main() {
     createdAt: now
   });
 
-  await upsertByField("collectionItems", "collectionId_productId", `${collectionId}_${productId}`, {
+  await upsertByField(collectionNames.collectionItems, "collectionId_productId", `${collectionId}_${productId}`, {
     collectionId,
     productId,
     note: "Great for first-time makers.",
@@ -157,9 +179,9 @@ async function main() {
     collectionId_productId: `${collectionId}_${productId}`
   });
 
-  const notificationSnap = await firestore.collection("notifications").where("userId", "==", makerId).limit(1).get();
+  const notificationSnap = await firestore.collection(collectionNames.notifications).where("userId", "==", makerId).limit(1).get();
   if (notificationSnap.empty) {
-    await firestore.collection("notifications").add({
+    await firestore.collection(collectionNames.notifications).add({
       userId: makerId,
       title: "Welcome to Catholic Product Hunt",
       body: "Your profile is ready. Submit your next launch and share it with the community.",
@@ -170,7 +192,7 @@ async function main() {
   }
 
   const eventSlug = "lent-hack-2026";
-  await firestore.collection("eventRegistrations").doc(`${eventSlug}_${makerId}`).set(
+  await firestore.collection(collectionNames.eventRegistrations).doc(`${eventSlug}_${makerId}`).set(
     {
       eventSlug,
       userId: makerId,
@@ -179,13 +201,17 @@ async function main() {
       projectName: "Parish Companion",
       skills: ["frontend", "backend", "product"],
       bio: "Building tools for parish communication and volunteer coordination.",
+      userName: "Maria Joseph",
+      userUsername: "maker_maria",
+      userAvatarUrl: "https://picsum.photos/seed/maria/100/100",
+      userBio: "Building practical tools for founders and teams.",
       createdAt: now,
       updatedAt: now
     },
     { merge: true }
   );
 
-  await firestore.collection("eventRegistrations").doc(`${eventSlug}_${hunterId}`).set(
+  await firestore.collection(collectionNames.eventRegistrations).doc(`${eventSlug}_${hunterId}`).set(
     {
       eventSlug,
       userId: hunterId,
@@ -194,15 +220,19 @@ async function main() {
       projectName: "Catechism Quest",
       skills: ["design", "research", "education"],
       bio: "Looking to build an engaging catechism learning experience.",
+      userName: "Paul Francis",
+      userUsername: "hunter_paul",
+      userAvatarUrl: "https://picsum.photos/seed/paul/100/100",
+      userBio: "I discover and launch products people actually use.",
       createdAt: now,
       updatedAt: now
     },
     { merge: true }
   );
 
-  const teammateSeed = await firestore.collection("teammatePosts").where("eventSlug", "==", eventSlug).limit(1).get();
+  const teammateSeed = await firestore.collection(collectionNames.teammatePosts).where("eventSlug", "==", eventSlug).limit(1).get();
   if (teammateSeed.empty) {
-    await firestore.collection("teammatePosts").add({
+    await firestore.collection(collectionNames.teammatePosts).add({
       eventSlug,
       userId: hunterId,
       participationType: "INDIVIDUAL",
@@ -211,6 +241,15 @@ async function main() {
       createdAt: now
     });
   }
+
+  await firestore.collection(SCHEMA_META_COLLECTION).doc(SCHEMA_META_DOC_ID).set(
+    {
+      activeVersion: FIRESTORE_SCHEMA_VERSION,
+      activeNamespace: FIRESTORE_SCHEMA_NAMESPACE,
+      seededAt: now
+    },
+    { merge: true }
+  );
 
   console.log("Firebase seed complete");
 }

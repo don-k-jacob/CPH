@@ -29,6 +29,14 @@
       "collectionGroup": "products",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "makerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "products",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "topicSlugs", "arrayConfig": "CONTAINS" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
@@ -67,6 +75,87 @@
     },
     {
       "collectionGroup": "eventRegistrations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eventSlug", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cph_v1_launches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "launchDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cph_v1_launches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "launchDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cph_v1_launches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "productId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "launchDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cph_v1_products",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "makerId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cph_v1_products",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "topicSlugs", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cph_v1_notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cph_v1_collectionItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "collectionId", "order": "ASCENDING" },
+        { "fieldPath": "position", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cph_v1_teammatePosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eventSlug", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cph_v1_eventRegistrations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eventSlug", "order": "ASCENDING" },
+        { "fieldPath": "participationType", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cph_v1_eventRegistrations",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "eventSlug", "order": "ASCENDING" },

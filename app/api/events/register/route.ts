@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { getBackendErrorMessage } from "@/lib/backend-error";
-import { upsertEventRegistration } from "@/lib/firebase-db";
+import { getUserById, upsertEventRegistration } from "@/lib/firebase-db";
 
 const teammatePreferenceEnum = z.enum(["solo", "looking", "team"]);
 
@@ -29,13 +29,24 @@ export async function POST(request: NextRequest) {
     }
     const parsed = schema.parse(body);
 
+    const fullUser = await getUserById(user.id);
+    const userSnapshot = fullUser
+      ? {
+          userName: fullUser.name,
+          userUsername: fullUser.username,
+          userAvatarUrl: fullUser.avatarUrl ?? null,
+          userBio: fullUser.bio ?? null
+        }
+      : undefined;
+
     await upsertEventRegistration({
       eventSlug: parsed.eventSlug,
       userId: user.id,
       teammatePreference: parsed.teammatePreference,
       referralSource: parsed.referralSource,
       eligibilityAgreed: true,
-      rulesAgreed: true
+      rulesAgreed: true,
+      userSnapshot
     });
 
     return NextResponse.json({ ok: true });

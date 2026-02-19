@@ -96,7 +96,7 @@ export function TeammateBoard({
         </div>
       ) : !isRegistered ? (
         <div className="rounded-xl border border-gold/40 bg-accentSoft/50 p-4 text-sm text-ink break-words">
-          Register for {eventTitle} in the <strong>Register</strong> tab first, then come back here to post what you are looking for.
+          Register for {eventTitle} first (use the Join hackathon button above), then come back here to post what you are looking for.
         </div>
       ) : null}
 
