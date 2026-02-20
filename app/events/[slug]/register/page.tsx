@@ -4,7 +4,7 @@ import { JoinEventForm } from "@/components/events/join-event-form";
 import { getCurrentUser } from "@/lib/auth";
 import { getEventBySlug } from "@/lib/events-config";
 import {
-  getEventApplicationByUser,
+  getEventApplicationForUser,
   getEventRegistrationByUser,
   refreshEventApplicationTeamStatuses
 } from "@/lib/firebase-db";
@@ -21,11 +21,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 async function getRegisterData(slug: string) {
   const currentUser = await getCurrentUser().catch(() => null);
   let registration: Awaited<ReturnType<typeof getEventRegistrationByUser>> = null;
-  let application: Awaited<ReturnType<typeof getEventApplicationByUser>> = null;
+  let application: Awaited<ReturnType<typeof getEventApplicationForUser>> = null;
   try {
     const [reg, appData] = await Promise.all([
       currentUser ? getEventRegistrationByUser(slug, currentUser.id) : Promise.resolve(null),
-      currentUser ? getEventApplicationByUser(slug, currentUser.id) : Promise.resolve(null)
+      currentUser ? getEventApplicationForUser(slug, currentUser) : Promise.resolve(null)
     ]);
     registration = reg;
     if (appData) {

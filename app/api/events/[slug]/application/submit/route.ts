@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getBackendErrorMessage } from "@/lib/backend-error";
-import { getEventRegistrationByUser, submitEventApplication } from "@/lib/firebase-db";
+import { getEventApplicationForUser, getEventRegistrationByUser, submitEventApplication } from "@/lib/firebase-db";
 
 export async function POST(
   _request: NextRequest,
@@ -20,7 +20,9 @@ export async function POST(
     if (!registration) {
       return NextResponse.json({ error: "Not registered for this event. Register first." }, { status: 403 });
     }
-    const result = await submitEventApplication(slug, user.id);
+    const application = await getEventApplicationForUser(slug, user);
+    const ownerId = application ? application.userId : user.id;
+    const result = await submitEventApplication(slug, ownerId);
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }

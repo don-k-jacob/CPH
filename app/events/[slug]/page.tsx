@@ -7,7 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getEventBySlug } from "@/lib/events-config";
 import {
   type EventRegistrationRecord,
-  getEventApplicationByUser,
+  getEventApplicationForUser,
   getEventRegistrationByUser,
   getEventRegistrations,
   getEventStats,
@@ -39,14 +39,14 @@ function getNavItems(participantCount: number, isRegistered: boolean) {
 async function getEventData(slug: string) {
   const currentUser = await getCurrentUser().catch(() => null);
   let registration: EventRegistrationRecord | null = null;
-  let application: Awaited<ReturnType<typeof getEventApplicationByUser>> | null = null;
+  let application: Awaited<ReturnType<typeof getEventApplicationForUser>> | null = null;
   let posts: Awaited<ReturnType<typeof getTeammatePosts>> = [];
   let participants: Awaited<ReturnType<typeof getEventRegistrations>> = [];
   let stats = { registrations: 0, teams: 0, individuals: 0, teammatePosts: 0 };
   try {
     const [reg, appData, postsData, participantsData, statsData] = await Promise.all([
       currentUser ? getEventRegistrationByUser(slug, currentUser.id) : Promise.resolve(null),
-      currentUser ? getEventApplicationByUser(slug, currentUser.id) : Promise.resolve(null),
+      currentUser ? getEventApplicationForUser(slug, currentUser) : Promise.resolve(null),
       getTeammatePosts(slug),
       getEventRegistrations(slug),
       getEventStats(slug)

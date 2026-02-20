@@ -5,7 +5,7 @@ import { getBackendErrorMessage } from "@/lib/backend-error";
 import {
   type EventApplicationSections,
   type EventApplicationTeamMember,
-  getEventApplicationByUser,
+  getEventApplicationForUser,
   getEventRegistrationByUser,
   refreshEventApplicationTeamStatuses,
   upsertEventApplicationDraft
@@ -81,7 +81,7 @@ export async function GET(
     if (!registration) {
       return NextResponse.json({ error: "Not registered for this event. Register first." }, { status: 403 });
     }
-    const application = await getEventApplicationByUser(slug, user.id);
+    const application = await getEventApplicationForUser(slug, user);
     if (!application) return NextResponse.json(null);
     const teamMembers = await refreshEventApplicationTeamStatuses(application.teamMembers);
     return NextResponse.json({ ...application, teamMembers });
@@ -107,6 +107,8 @@ export async function POST(
     if (!registration) {
       return NextResponse.json({ error: "Not registered for this event. Register first." }, { status: 403 });
     }
+    const existingApp = await getEventApplicationForUser(slug, user);
+    const ownerId = existingApp ? existingApp.userId : user.id;
     let body: unknown;
     try {
       body = await request.json();
@@ -121,7 +123,7 @@ export async function POST(
     }));
     const app = await upsertEventApplicationDraft({
       eventSlug: slug,
-      userId: user.id,
+      userId: ownerId,
       teamMembers,
       sections: parsed.sections
     });

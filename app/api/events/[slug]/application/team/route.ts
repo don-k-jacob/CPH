@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getBackendErrorMessage } from "@/lib/backend-error";
 import {
   addEventApplicationTeamMember,
+  getEventApplicationForUser,
   getEventRegistrationByUser,
   removeEventApplicationTeamMember
 } from "@/lib/firebase-db";
@@ -27,6 +28,8 @@ export async function POST(
     if (!registration) {
       return NextResponse.json({ error: "Not registered for this event. Register first." }, { status: 403 });
     }
+    const application = await getEventApplicationForUser(slug, user);
+    const ownerId = application ? application.userId : user.id;
     let body: unknown;
     try {
       body = await request.json();
@@ -34,7 +37,7 @@ export async function POST(
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
     const { email } = addSchema.parse(body);
-    const result = await addEventApplicationTeamMember(slug, user.id, email);
+    const result = await addEventApplicationTeamMember(slug, ownerId, email);
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
@@ -64,11 +67,13 @@ export async function DELETE(
     if (!registration) {
       return NextResponse.json({ error: "Not registered for this event. Register first." }, { status: 403 });
     }
+    const application = await getEventApplicationForUser(slug, user);
+    const ownerId = application ? application.userId : user.id;
     const email = request.nextUrl.searchParams.get("email");
     if (!email?.trim()) {
       return NextResponse.json({ error: "Missing email query parameter" }, { status: 400 });
     }
-    await removeEventApplicationTeamMember(slug, user.id, email);
+    await removeEventApplicationTeamMember(slug, ownerId, email);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: getBackendErrorMessage(error) }, { status: 503 });

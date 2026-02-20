@@ -1392,6 +1392,34 @@ export async function getEventApplicationByUser(eventSlug: string, userId: strin
   return normalizeEventApplication(snap.id, snap.data()!);
 }
 
+/**
+ * Get the event application that this user owns or is an invited team member of,
+ * so both the primary applicant and co-founders see the same project.
+ */
+export async function getEventApplicationForUser(
+  eventSlug: string,
+  user: UserRecord
+): Promise<EventApplicationRecord | null> {
+  const asOwner = await getEventApplicationByUser(eventSlug, user.id);
+  if (asOwner) return asOwner;
+
+  const snap = await runQueryWithLegacyFallback("eventApplications", (ref) =>
+    ref.where("eventSlug", "==", eventSlug).limit(100)
+  );
+  const userEmail = (user.email ?? "").toLowerCase();
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const teamMembers = Array.isArray(data.teamMembers)
+      ? (data.teamMembers as unknown[]).map(normalizeTeamMember)
+      : [];
+    const isTeamMember = teamMembers.some(
+      (m) => m.userId === user.id || (m.email && m.email.toLowerCase() === userEmail)
+    );
+    if (isTeamMember) return normalizeEventApplication(doc.id, data);
+  }
+  return null;
+}
+
 /** Refresh team member statuses (invited / profile_incomplete / complete) from current user data. */
 export async function refreshEventApplicationTeamStatuses(
   teamMembers: EventApplicationTeamMember[]
